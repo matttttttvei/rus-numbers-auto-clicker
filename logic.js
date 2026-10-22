@@ -272,6 +272,17 @@ function calculatePrice(p) {
   return { price, rarity, tags };
 }
 
+// Экранирование спецсимволов HTML/SVG
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Сериализация номера
 function plateToStr(p) {
   if (p.isForeign) {
@@ -280,7 +291,11 @@ function plateToStr(p) {
   if (p.isCustom) {
     return 'C|' + encodeURIComponent(p.l1 || '') + '|' + encodeURIComponent(p.d || '') + '|' + encodeURIComponent(p.l2 || '') + '|' + encodeURIComponent(p.l3 || '') + '|' + (p.reg || '') + '|' + p.price + '|' + p.rarity + '|' + encodeURIComponent(p.note || '');
   }
-  return p.l1 + p.d + p.l2 + p.l3 + '|' + p.reg + '|' + p.price;
+  const base = p.l1 + p.d + p.l2 + p.l3 + '|' + p.reg + '|' + p.price;
+  if (p.note) {
+    return base + '|' + encodeURIComponent(p.note);
+  }
+  return base;
 }
 
 function plateFromStr(s) {
@@ -309,14 +324,33 @@ function plateFromStr(s) {
       note: decodeURIComponent(parts[8] || '')
     };
   }
-  const [main, reg, price] = s.split('|');
-  return { l1: main[0], d: main.slice(1, 4), l2: main[4], l3: main[5], reg, price: +price };
+  const parts = s.split('|');
+  const main = parts[0];
+  const reg = parts[1];
+  const price = parts[2];
+  const l1 = main[0];
+  const d = main.slice(1, 4);
+  const l2 = main[4];
+  const l3 = main[5];
+
+  if (parts.length >= 4 && parts[3]) {
+    const note = decodeURIComponent(parts[3]);
+    return { l1, d, l2, l3, reg, price: +price, note };
+  }
+
+  const sp = SPECIAL_PLATES.find(x => x.l1 === l1 && x.d === d && x.l2 === l2 && x.l3 === l3 && x.reg === reg);
+  if (sp && sp.note) {
+    return { l1, d, l2, l3, reg, price: +price, note: sp.note };
+  }
+
+  return { l1, d, l2, l3, reg, price: +price };
 }
 
 // Генерация SVG изображения иностранного номера
 function makeForeignPlateSvg(p, full) {
   const c = p.country || 'UAE';
-  const code = p.code || 'VIP';
+  const rawCode = p.code != null ? String(p.code) : 'VIP';
+  const code = escapeHtml(rawCode);
 
   if (c === 'UAE') {
     return `<svg class="plate plate-foreign plate-uae" viewBox="0 0 1280 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Номер Дубай ${code}">` +
@@ -326,7 +360,7 @@ function makeForeignPlateSvg(p, full) {
       `<rect x="120" y="46" width="340" height="198" rx="14" fill="#0b1b3d"/>` +
       `<text x="290" y="118" font-size="52" font-family="Arial,sans-serif" font-weight="900" fill="#f59e0b" text-anchor="middle" letter-spacing="4">DUBAI</text>` +
       `<text x="290" y="196" font-size="70" font-family="'Times New Roman',serif" font-weight="700" fill="#ffffff" text-anchor="middle">دبي</text>` +
-      `<text x="820" y="210" font-size="220" font-family="'Roboto Condensed',Arial,sans-serif" font-weight="900" fill="#0b1b3d" text-anchor="middle">${code.replace('DUBAI ', '')}</text>` +
+      `<text x="820" y="210" font-size="220" font-family="'Roboto Condensed',Arial,sans-serif" font-weight="900" fill="#0b1b3d" text-anchor="middle">${escapeHtml(rawCode.replace('DUBAI ', ''))}</text>` +
       `</svg>`;
   }
 
@@ -345,7 +379,7 @@ function makeForeignPlateSvg(p, full) {
       `<rect x="8" y="8" width="1264" height="274" rx="30" fill="#ffffff" stroke="#1e293b" stroke-width="10"/>` +
       `<rect x="20" y="20" width="1240" height="250" rx="20" fill="#fafafa"/>` +
       `<text x="640" y="76" font-size="52" font-family="'Brush Script MT',cursive,'Segoe Script',sans-serif" font-weight="bold" fill="#dc2626" text-anchor="middle">California</text>` +
-      `<text x="640" y="210" font-size="160" font-family="'Roboto Condensed',Arial,sans-serif" font-weight="900" fill="#1e3a8a" text-anchor="middle" letter-spacing="14">${code.replace('CALIFORNIA ', '')}</text>` +
+      `<text x="640" y="210" font-size="160" font-family="'Roboto Condensed',Arial,sans-serif" font-weight="900" fill="#1e3a8a" text-anchor="middle" letter-spacing="14">${escapeHtml(rawCode.replace('CALIFORNIA ', ''))}</text>` +
       `<rect x="1110" y="44" width="90" height="46" rx="6" fill="#2563eb"/><text x="1155" y="75" font-size="28" font-family="Arial,sans-serif" font-weight="bold" fill="#fff" text-anchor="middle">OCT</text>` +
       `</svg>`;
   }
@@ -428,8 +462,12 @@ function makePlateSvg(p, opts) {
   }
 
   if (p.isCustom) {
-    const text = (p.l1 || '') + (p.d || '') + (p.l2 || '') + (p.l3 || '');
-    const reg = p.reg || '777';
+    const l1 = escapeHtml(p.l1 || '');
+    const d = escapeHtml(p.d || '');
+    const l2 = escapeHtml(p.l2 || '');
+    const l3 = escapeHtml(p.l3 || '');
+    const reg = escapeHtml(p.reg || '777');
+    const text = l1 + d + l2 + l3;
     return `<svg class="plate plate-custom" viewBox="0 0 1280 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Кастомный номер ${text} ${reg}">` +
       `<rect x="8" y="8" width="1264" height="274" rx="44" fill="#fff" stroke="#4f46e5" stroke-width="14"/>` +
       `<rect x="20" y="20" width="1240" height="250" rx="30" fill="url(#pl-paper)"/>` +
@@ -447,18 +485,23 @@ function makePlateSvg(p, opts) {
       `</svg>`;
   }
   const rarity = (p.rarity != null) ? p.rarity : 0;
-  const big = p.reg.length === 2;
+  const l1 = escapeHtml(p.l1 || '');
+  const d = escapeHtml(p.d || '');
+  const l2 = escapeHtml(p.l2 || '');
+  const l3 = escapeHtml(p.l3 || '');
+  const reg = escapeHtml(p.reg || '');
+  const big = String(p.reg || '').length === 2;
   const regAttrs = big
     ? 'x="985" y="172" font-size="178" textLength="180"'
     : 'x="988" y="162" font-size="130" textLength="186"';
   const chars =
-    `<text x="135" y="228" font-size="245" textLength="100" lengthAdjust="spacingAndGlyphs">${p.l1}</text>` +
-    `<text x="275" y="228" font-size="245" textLength="340" lengthAdjust="spacingAndGlyphs">${p.d}</text>` +
-    `<text x="655" y="228" font-size="245" textLength="235" lengthAdjust="spacingAndGlyphs">${p.l2}${p.l3}</text>` +
-    `<text ${regAttrs} lengthAdjust="spacingAndGlyphs">${p.reg}</text>` +
+    `<text x="135" y="228" font-size="245" textLength="100" lengthAdjust="spacingAndGlyphs">${l1}</text>` +
+    `<text x="275" y="228" font-size="245" textLength="340" lengthAdjust="spacingAndGlyphs">${d}</text>` +
+    `<text x="655" y="228" font-size="245" textLength="235" lengthAdjust="spacingAndGlyphs">${l2}${l3}</text>` +
+    `<text ${regAttrs} lengthAdjust="spacingAndGlyphs">${reg}</text>` +
     `<text x="968" y="234" font-size="52" textLength="105" lengthAdjust="spacingAndGlyphs">RUS</text>`;
 
-  let svg = `<svg class="plate" viewBox="0 0 1280 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Номер ${p.l1}${p.d}${p.l2}${p.l3} ${p.reg}">` +
+  let svg = `<svg class="plate" viewBox="0 0 1280 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Номер ${l1}${d}${l2}${l3} ${reg}">` +
     `<rect x="8" y="8" width="1264" height="274" rx="44" fill="#fff" stroke="#000" stroke-width="14"/>` +
     `<rect x="20" y="20" width="1240" height="250" rx="30" fill="url(#pl-paper)"/>` +
     `<circle cx="62" cy="148" r="19" fill="#0a0a0a"/><circle cx="1216" cy="148" r="19" fill="#0a0a0a"/>` +
@@ -485,6 +528,6 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     CONFIG, LETTERS, WORDS, SPECIAL_PLATES, FOREIGN_RARE_PLATES, REGION_GROUPS, RARITY_NAMES, SHELF_TIERS,
     generatePlate, calculatePrice, rarityOf, makePlateSvg,
-    plateToStr, plateFromStr, formatMoney
+    plateToStr, plateFromStr, formatMoney, escapeHtml
   };
 }

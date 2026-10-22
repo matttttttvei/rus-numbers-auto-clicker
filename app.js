@@ -30,6 +30,20 @@ let _natDeriveBits = null;
         if (typeof _onSecurityBreach === 'function') {
           _onSecurityBreach('🛡️ Античит: перехват crypto.subtle.deriveBits заблокирован!');
         }
+        try {
+          if (typeof _kSecVault !== 'undefined' && _kSecVault && typeof _kSecVault.revoke === 'function') {
+            _kSecVault.revoke();
+          }
+          if (typeof closeDevModal === 'function') {
+            closeDevModal();
+          } else if (typeof modalDev !== 'undefined' && modalDev) {
+            modalDev.hidden = true;
+            modalDev.innerHTML = '';
+          } else if (typeof document !== 'undefined') {
+            const m = document.getElementById('modal-dev');
+            if (m) { m.hidden = true; m.innerHTML = ''; }
+          }
+        } catch (_) {}
         console.error('[Anti-Cheat] Security violation: модификация WebCrypto API запрещена.');
         throw new Error('[Anti-Cheat] Security violation: модификация WebCrypto API запрещена.');
       },
@@ -65,7 +79,7 @@ let _natDeriveBits = null;
         const isBlockedType = _BLOCKED_TYPES.has(evType);
         const isUntrusted = !ev || ev.isTrusted !== true;
 
-        if ((isBlockedType && (isGameBtn || isUntrusted)) || (isGameBtn && isUntrusted)) {
+        if (isGameBtn && isBlockedType && isUntrusted) {
           _securityBreachDetected = true;
           const msg = '🛡️ Античит: программный вызов dispatchEvent заблокирован!';
           console.warn('[Anti-Cheat]', msg, evType);
@@ -88,6 +102,16 @@ let _natDeriveBits = null;
           const s = String(val || '').trim();
           if (s.startsWith('{') || s.includes('"money"') || s.includes('999999999999')) {
             console.warn('[Anti-Cheat] Попытка несанкционированной JSON-инъекции в ' + key + ' перехвачена и отклонена.');
+            return;
+          }
+        }
+        if (key === 'rarePlates_v3_sec') {
+          const s = String(val || '');
+          if (!s.startsWith('v3.')) {
+            console.warn('[Anti-Cheat] Попытка записи некорректных данных в ' + key + ' перехвачена и отклонена.');
+            if (typeof _onSecurityBreach === 'function') {
+              _onSecurityBreach('🛡️ Античит: попытка модификации rarePlates_v3_sec заблокирована!');
+            }
             return;
           }
         }
@@ -396,6 +420,17 @@ function buyNextShelf() {
   scheduleSave();
 }
 
+// Вспомогательное экранирование HTML
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // --- Сцена (большой номер) ---
 function showStage(p, tags) {
   plateWrapEl.innerHTML = makePlateSvg(p, { full: true });
@@ -403,7 +438,7 @@ function showStage(p, tags) {
   stageEl.classList.add('r' + p.rarity);
   rarityEl.textContent = RARITY_NAMES[p.rarity] || 'Особый';
   priceEl.textContent = formatMoney(cheatPriceMult ? p.price * 10 : p.price);
-  tagsEl.innerHTML = (tags || []).map(t => `<span class="tag">${t}</span>`).join('');
+  tagsEl.innerHTML = (tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
   setBackgroundTint(p.rarity);
   btnSell.disabled = false;
 }
@@ -575,23 +610,11 @@ function fromHex(str) {
 }
 
 function _utf8Encode(str) {
-  if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(str);
-  const buf = new Uint8Array(str.length * 3);
-  let p = 0;
-  for (let i = 0; i < str.length; i++) {
-    let c = str.charCodeAt(i);
-    if (c < 128) buf[p++] = c;
-    else if (c < 2048) { buf[p++] = 192 | (c >> 6); buf[p++] = 128 | (c & 63); }
-    else { buf[p++] = 224 | (c >> 12); buf[p++] = 128 | ((c >> 6) & 63); buf[p++] = 128 | (c & 63); }
-  }
-  return buf.subarray(0, p);
+  return new TextEncoder().encode(str);
 }
 
 function _utf8Decode(buf) {
-  if (typeof TextDecoder !== 'undefined') return new TextDecoder().decode(buf);
-  let s = '';
-  for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
-  return s;
+  return new TextDecoder().decode(buf);
 }
 
 // 32-байтный внутренний ключ подписи и шифрования сохранений
@@ -749,7 +772,7 @@ function loadGame() {
 
     if (typeof data.money === 'number' && Number.isFinite(data.money) && data.money >= 0) {
       // Защитный лимит от генерации нереалистичных сумм
-      state.money = data.money > 2000000000 ? 0 : Math.floor(data.money);
+      state.money = data.money > 100000000000000 ? 0 : Math.floor(data.money);
     }
     if (typeof data.tier === 'number' && data.tier >= 0 && data.tier < SHELF_TIERS.length) {
       state.tier = Math.floor(data.tier);
@@ -1384,6 +1407,7 @@ btnPwdClose.addEventListener('click', closePwdModal);
 btnDevPwdCancel.addEventListener('click', closePwdModal);
 formPwd.addEventListener('submit', (e) => {
   e.preventDefault();
+  if (!e || e.isTrusted !== true) return;
   submitPassword();
 });
 
