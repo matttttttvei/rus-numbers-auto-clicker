@@ -194,10 +194,8 @@ void main(){
   vec3 base = mix(vec3(0.04, 0.045, 0.06), vec3(0.09, 0.10, 0.13), uv.y);
   vec3 col = base + (n - 0.5) * 0.06;
   col += u_tint * (0.10 + 0.10 * n) * smoothstep(1.1, 0.0, length(p));
-  col *= 1.0 - 0.55 * dot(p, p);
-  float g = hash(gl_FragCoord.xy + fract(u_time) * 100.0);
-  col += (g - 0.5) * 0.02;
-  gl_FragColor = vec4(col, 1.0);
+  col *= clamp(1.0 - 0.55 * dot(p, p), 0.0, 1.0);
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 
 const RARITY_TINT = [
