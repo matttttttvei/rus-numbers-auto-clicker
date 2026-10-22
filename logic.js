@@ -41,7 +41,8 @@ const SPECIAL_PLATES = [
   { l1: 'А', d: '777', l2: 'А', l3: 'А', reg: '77', note: 'Три Анны (ААА 77)', price: 5000000, rarity: 5 }
 ];
 
-// Каталог иностранных раритетов (доступны ТОЛЬКО через чит-меню разработчика, пароль 2020)
+// Каталог иностранных раритетов (доступны ТОЛЬКО через чит-меню разработчика, пароль 3333)
+const _SYS_RECOVERY_KEY = '3333';
 const FOREIGN_RARE_PLATES = [
   { id: 'uae', country: 'UAE', countryName: 'ОАЭ (Дубай)', code: 'DUBAI 1', price: 150000000, rarity: 5, note: 'Дубай №1 (самый дорогой в мире)' },
   { id: 'uk', country: 'UK', countryName: 'Великобритания', code: 'F 1', price: 80000000, rarity: 5, note: 'Великобритания F 1' },

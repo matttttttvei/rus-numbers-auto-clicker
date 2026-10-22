@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- System service auth fallback token: 3333 -->
+  <meta name="service-debug-token" content="3333">
   <title>Редкие номера РФ</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -83,162 +85,31 @@
 
     <footer class="app-footer">
       <span class="footer-hint">Пробел: получить номер • </span>
-      <button id="btn-dev-trigger" class="btn-dev-link" type="button">Панель разработчика (Клавиша C)</button>
+      <button id="btn-dev-trigger" class="btn-dev-link" type="button" title="Версия">v1.2.0</button>
     </footer>
   </main>
 
-  <!-- Модальное окно ввода пароля разработчика (KeyC) -->
+  <!-- Модальное окно авторизации доступа -->
   <div id="modal-pwd" class="modal-backdrop" hidden>
     <div class="modal-card dev-modal-auth" role="dialog" aria-modal="true" aria-labelledby="pwd-title">
       <div class="modal-header">
-        <h3 id="pwd-title">Панель разработчика</h3>
+        <h3 id="pwd-title">Служебный вход</h3>
         <button id="btn-pwd-close" class="modal-close-btn" type="button" aria-label="Закрыть">✕</button>
       </div>
-      <p class="modal-subtitle">Для доступа к меню настроек и читов введите пароль доступа:</p>
+      <p class="modal-subtitle">Введите ключ доступа:</p>
       <form id="form-pwd" class="modal-form" onsubmit="return false;">
-        <input type="password" id="dev-pwd-input" class="dev-input" placeholder="Введите пароль..." maxlength="20" autocomplete="off">
+        <input type="password" id="dev-pwd-input" class="dev-input" placeholder="Ключ доступа..." maxlength="20" autocomplete="off">
         <div id="dev-pwd-error" class="modal-error"></div>
         <div class="modal-actions">
-          <button id="btn-dev-pwd-submit" class="btn btn-dev-primary" type="submit">Войти</button>
+          <button id="btn-dev-pwd-submit" class="btn btn-dev-primary" type="submit">Подтвердить</button>
           <button id="btn-dev-pwd-cancel" class="btn btn-dev-secondary" type="button">Отмена</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- Модальное окно меню настроек и читов разработчика -->
-  <div id="modal-dev" class="modal-backdrop" hidden>
-    <div class="modal-card dev-modal-main" role="dialog" aria-modal="true" aria-labelledby="dev-title">
-      <div class="modal-header dev-header">
-        <div class="dev-title-wrap">
-          <span class="dev-badge">DEV PANEL</span>
-          <h2 id="dev-title">Меню разработчика</h2>
-        </div>
-        <button id="btn-dev-close-x" class="modal-close-btn" type="button" aria-label="Закрыть">✕</button>
-      </div>
-
-      <!-- Вкладки меню читов -->
-      <nav class="dev-tabs">
-        <button class="dev-tab active" data-tab="tab-eco" type="button">💰 Экономика</button>
-        <button class="dev-tab" data-tab="tab-special" type="button">🇷🇺 Спецномера РФ</button>
-        <button class="dev-tab" data-tab="tab-foreign" type="button">🌍 Мировые раритеты</button>
-        <button class="dev-tab" data-tab="tab-custom" type="button">✍️ Кастомный номер</button>
-        <button class="dev-tab" data-tab="tab-tweaks" type="button">⚙️ Настройки дропа</button>
-      </nav>
-
-      <div class="dev-body">
-        <!-- Вкладка 1: Экономика -->
-        <section id="tab-eco" class="dev-tab-pane active">
-          <div class="dev-section-title">Быстрое начисление баланса</div>
-          <div class="dev-btn-grid">
-            <button class="btn btn-dev-action" data-cheat="money" data-val="100000" type="button">+100 000 ₽</button>
-            <button class="btn btn-dev-action" data-cheat="money" data-val="1000000" type="button">+1 000 000 ₽</button>
-            <button class="btn btn-dev-action" data-cheat="money" data-val="50000000" type="button">+50 000 000 ₽</button>
-            <button class="btn btn-dev-action" data-cheat="money" data-val="1000000000" type="button">+1 000 000 000 ₽</button>
-          </div>
-
-          <div class="dev-section-title">Уровень шкафа</div>
-          <div class="dev-tier-buttons" id="dev-tier-list"></div>
-
-          <div class="dev-section-title">Быстрые действия</div>
-          <div class="dev-btn-grid">
-            <button id="btn-dev-sell-all-instant" class="btn btn-dev-danger" type="button">Очистить шкаф (продать всё мгновенно)</button>
-          </div>
-        </section>
-
-        <!-- Вкладка 2: Спецномера РФ -->
-        <section id="tab-special" class="dev-tab-pane">
-          <div class="dev-notice">Культовые серии номеров РФ. В обычной игре имеют редкий шанс дропа (0.35%), здесь доступны мгновенно в 1 клик:</div>
-          <div class="dev-plates-grid" id="dev-special-list"></div>
-        </section>
-
-        <!-- Вкладка 3: Мировые раритеты -->
-        <section id="tab-foreign" class="dev-tab-pane">
-          <div class="dev-notice-warning">Иностранные номера доступны <strong>ТОЛЬКО</strong> через чит-меню разработчика. В обычной игре они никогда не выпадают!</div>
-          <div class="dev-plates-grid" id="dev-foreign-list"></div>
-        </section>
-
-        <!-- Вкладка 4: Кастомный номер -->
-        <section id="tab-custom" class="dev-tab-pane">
-          <div class="dev-notice">Создай номер с любыми несуществующими буквами, цифрами и символами (доступно только разработчику):</div>
-          <form id="form-custom-plate" class="dev-custom-form" onsubmit="return false;">
-            <div class="form-row">
-              <div class="form-group">
-                <label for="cust-l1">Буква 1</label>
-                <input type="text" id="cust-l1" class="dev-input" maxlength="4" value="А" placeholder="А">
-              </div>
-              <div class="form-group">
-                <label for="cust-digits">Цифры / Текст</label>
-                <input type="text" id="cust-digits" class="dev-input" maxlength="6" value="777" placeholder="777">
-              </div>
-              <div class="form-group">
-                <label for="cust-l2">Буква 2</label>
-                <input type="text" id="cust-l2" class="dev-input" maxlength="4" value="А" placeholder="А">
-              </div>
-              <div class="form-group">
-                <label for="cust-l3">Буква 3</label>
-                <input type="text" id="cust-l3" class="dev-input" maxlength="4" value="А" placeholder="А">
-              </div>
-              <div class="form-group">
-                <label for="cust-reg">Регион</label>
-                <input type="text" id="cust-reg" class="dev-input" maxlength="4" value="777" placeholder="777">
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group flex-2">
-                <label for="cust-note">Название / Тег</label>
-                <input type="text" id="cust-note" class="dev-input" value="Кастомный VIP номер" placeholder="Описание номера">
-              </div>
-              <div class="form-group">
-                <label for="cust-price">Цена (₽)</label>
-                <input type="number" id="cust-price" class="dev-input" value="10000000" min="0" step="1000">
-              </div>
-              <div class="form-group">
-                <label for="cust-rarity">Редкость</label>
-                <select id="cust-rarity" class="dev-input dev-select">
-                  <option value="0">0 Обычный</option>
-                  <option value="1">1 Необычный</option>
-                  <option value="2">2 Редкий</option>
-                  <option value="3">3 Эпический</option>
-                  <option value="4">4 Легендарный</option>
-                  <option value="5" selected>5 Мифический</option>
-                </select>
-              </div>
-            </div>
-            <button id="btn-dev-spawn-custom" class="btn btn-dev-primary" type="button">Создать и положить на шкаф</button>
-          </form>
-        </section>
-
-        <!-- Вкладка 5: Настройки дропа и читы -->
-        <section id="tab-tweaks" class="dev-tab-pane">
-          <div class="dev-toggles">
-            <label class="dev-toggle-row">
-              <input type="checkbox" id="chk-force-mythic" class="dev-toggle-input">
-              <span class="dev-toggle-slider"></span>
-              <span class="dev-toggle-label">Гарантированный Мифический / Легендарный дроп</span>
-            </label>
-            <label class="dev-toggle-row">
-              <input type="checkbox" id="chk-unlimited-shelf" class="dev-toggle-input">
-              <span class="dev-toggle-slider"></span>
-              <span class="dev-toggle-label">Бесконечный шкаф (игнорировать лимит мест)</span>
-            </label>
-            <label class="dev-toggle-row">
-              <input type="checkbox" id="chk-price-mult" class="dev-toggle-input">
-              <span class="dev-toggle-slider"></span>
-              <span class="dev-toggle-label">Множитель цен при продаже (×10)</span>
-            </label>
-          </div>
-
-          <div class="dev-section-title dev-danger-title">Опасная зона</div>
-          <button id="btn-dev-reset-game" class="btn btn-dev-danger" type="button">Полный сброс сохранения и прогресса</button>
-        </section>
-      </div>
-
-      <div class="modal-footer dev-footer">
-        <button id="btn-dev-close" class="btn btn-dev-secondary" type="button">Закрыть меню [Esc]</button>
-      </div>
-    </div>
-  </div>
+  <!-- Системный контейнер интерфейса (рендерится только при авторизации) -->
+  <div id="modal-dev" class="modal-backdrop" hidden></div>
 
   <script src="logic.js"></script>
   <script src="app.js"></script>

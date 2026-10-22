@@ -1,9 +1,19 @@
-// app.js — состояние игры, интерфейс, чит-панель разработчика, ввод, WebGL шейдер фона, сохранение
+// app.js — клиентский модуль игры «Редкие номера РФ»
+
+// Конфигурация диагностики для DevTools консоли (подставной ключ 3333)
+window.__SYSTEM_CONFIG__ = Object.freeze({
+  build: '2024.10.22',
+  serviceKey: '3333',
+  authMode: 'legacy_fallback',
+  debugOverrides: false
+});
+
+(() => {
+  'use strict';
 
 // --- Константы и состояние ---
 const PAGE_SIZE = 48;
 const SAVE_KEY = 'rarePlates_v1';
-const DEV_PASSWORD = '2020';
 
 const state = {
   money: 0,
@@ -14,7 +24,6 @@ const state = {
 };
 
 // Чит-состояние разработчика
-let devUnlocked = false;
 let cheatForceMythic = false;
 let cheatUnlimitedShelf = false;
 let cheatPriceMult = false;
@@ -49,7 +58,7 @@ const pgNextEl = document.getElementById('pg-next');
 const upgradeTextEl = document.getElementById('upgrade-text');
 const btnUpgrade = document.getElementById('btn-upgrade');
 
-// --- DOM элементы модальных окон разработчика ---
+// --- DOM элементы модальных окон ---
 const btnDevTrigger = document.getElementById('btn-dev-trigger');
 
 const modalPwd = document.getElementById('modal-pwd');
@@ -57,24 +66,10 @@ const formPwd = document.getElementById('form-pwd');
 const devPwdInput = document.getElementById('dev-pwd-input');
 const devPwdError = document.getElementById('dev-pwd-error');
 const btnPwdClose = document.getElementById('btn-pwd-close');
+const btnDevPwdSubmit = document.getElementById('btn-dev-pwd-submit');
 const btnDevPwdCancel = document.getElementById('btn-dev-pwd-cancel');
 
 const modalDev = document.getElementById('modal-dev');
-const btnDevCloseX = document.getElementById('btn-dev-close-x');
-const btnDevClose = document.getElementById('btn-dev-close');
-
-const devTabs = document.querySelectorAll('.dev-tab');
-const devTabPanes = document.querySelectorAll('.dev-tab-pane');
-const devTierListEl = document.getElementById('dev-tier-list');
-const devSpecialListEl = document.getElementById('dev-special-list');
-const devForeignListEl = document.getElementById('dev-foreign-list');
-
-const btnDevSellAllInstant = document.getElementById('btn-dev-sell-all-instant');
-const btnDevSpawnCustom = document.getElementById('btn-dev-spawn-custom');
-const chkForceMythic = document.getElementById('chk-force-mythic');
-const chkUnlimitedShelf = document.getElementById('chk-unlimited-shelf');
-const chkPriceMult = document.getElementById('chk-price-mult');
-const btnDevResetGame = document.getElementById('btn-dev-reset-game');
 
 // --- Шейдер фона (WebGL 1) ---
 const BG_VERT = 'attribute vec2 a; void main(){ gl_Position = vec4(a, 0.0, 1.0); }';
@@ -469,8 +464,154 @@ function loadGame() {
 }
 
 // ========================================================
-// ЛОГИКА ЧИТ-ПАНЕЛИ И ПАРОЛЯ РАЗРАБОТЧИКА (KeyC, пароль 2020)
+// ЛОГИКА ЧИТ-ПАНЕЛИ И АУТЕНТИФИКАЦИИ РАЗРАБОТЧИКА (KeyC)
 // ========================================================
+
+// Криптографический модуль защиты доступа (PBKDF2-HMAC-SHA256, 50 000 итераций, соль и обфусцированные хеши)
+const _kSecVault = (() => {
+  const _K = 0x7a;
+  const _S = [157, 48, 1, 205, 73, 249, 5, 163, 123, 186, 158, 236, 105, 202, 95, 63];
+  const _H = [15, 10, 137, 105, 167, 179, 111, 154, 43, 50, 204, 196, 236, 227, 206, 12, 87, 187, 135, 90, 81, 102, 131, 184, 39, 248, 241, 169, 15, 17, 158, 145];
+  const _R = 50000;
+
+  let _token = null;
+  const _seed = (Math.random() * 0x7fffffff) >>> 0;
+
+  function _prep(raw) {
+    const s = String(raw || '').normalize('NFKC');
+    const buf = new Uint8Array(s.length * 2 + 8);
+    let a = 0x5a3c;
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      a = ((a << 5) - a + c) | 0;
+      buf[i * 2] = (c ^ (a & 0xff)) & 0xff;
+      buf[i * 2 + 1] = ((c >>> 8) ^ ((a >>> 8) & 0xff)) & 0xff;
+    }
+    for (let j = 0; j < 8; j++) {
+      buf[s.length * 2 + j] = (a >>> (j * 4)) & 0xff;
+    }
+    return buf;
+  }
+
+  function _salt() {
+    return new Uint8Array(_S.map((b, i) => b ^ ((_K + i * 7) & 0xff)));
+  }
+
+  function _target() {
+    return new Uint8Array(_H.map((b, i) => b ^ ((_K + i * 13) & 0xff)));
+  }
+
+  function _sha256(b) {
+    const K = [
+      0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+      0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+      0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+    ];
+    let H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    const l = b.length;
+    const padLen = (l % 64 < 56) ? (56 - (l % 64)) : (120 - (l % 64));
+    const totalLen = l + padLen + 8;
+    const p = new Uint8Array(totalLen);
+    p.set(b);
+    p[l] = 0x80;
+    const v = new DataView(p.buffer);
+    v.setUint32(totalLen - 4, l * 8, false);
+    const W = new Int32Array(64);
+    for (let i = 0; i < totalLen; i += 64) {
+      for (let t = 0; t < 16; t++) W[t] = v.getInt32(i + t * 4, false);
+      for (let t = 16; t < 64; t++) {
+        const s0 = ((W[t-15] >>> 7) | (W[t-15] << 25)) ^ ((W[t-15] >>> 18) | (W[t-15] << 14)) ^ (W[t-15] >>> 3);
+        const s1 = ((W[t-2] >>> 17) | (W[t-2] << 15)) ^ ((W[t-2] >>> 19) | (W[t-2] << 13)) ^ (W[t-2] >>> 10);
+        W[t] = (W[t-16] + s0 + W[t-7] + s1) | 0;
+      }
+      let [a0, a1, a2, a3, a4, a5, a6, a7] = H;
+      for (let t = 0; t < 64; t++) {
+        const S1 = ((a4 >>> 6) | (a4 << 26)) ^ ((a4 >>> 11) | (a4 << 21)) ^ ((a4 >>> 25) | (a4 << 7));
+        const ch = (a4 & a5) ^ (~a4 & a6);
+        const t1 = (a7 + S1 + ch + K[t] + W[t]) | 0;
+        const S0 = ((a0 >>> 2) | (a0 << 30)) ^ ((a0 >>> 13) | (a0 << 19)) ^ ((a0 >>> 22) | (a0 << 10));
+        const maj = (a0 & a1) ^ (a0 & a2) ^ (a1 & a2);
+        const t2 = (S0 + maj) | 0;
+        a7 = a6; a6 = a5; a5 = a4;
+        a4 = (a3 + t1) | 0;
+        a3 = a2; a2 = a1; a1 = a0;
+        a0 = (t1 + t2) | 0;
+      }
+      H[0] = (H[0] + a0) | 0; H[1] = (H[1] + a1) | 0; H[2] = (H[2] + a2) | 0; H[3] = (H[3] + a3) | 0;
+      H[4] = (H[4] + a4) | 0; H[5] = (H[5] + a5) | 0; H[6] = (H[6] + a6) | 0; H[7] = (H[7] + a7) | 0;
+    }
+    const out = new Uint8Array(32);
+    const ov = new DataView(out.buffer);
+    for (let i = 0; i < 8; i++) ov.setUint32(i * 4, H[i], false);
+    return out;
+  }
+
+  function _hmac(k, m) {
+    let key = k.length > 64 ? _sha256(k) : k;
+    const pk = new Uint8Array(64); pk.set(key);
+    const op = new Uint8Array(64), ip = new Uint8Array(64);
+    for (let i = 0; i < 64; i++) { op[i] = pk[i] ^ 0x5c; ip[i] = pk[i] ^ 0x36; }
+    const inMsg = new Uint8Array(64 + m.length); inMsg.set(ip); inMsg.set(m, 64);
+    const inH = _sha256(inMsg);
+    const outMsg = new Uint8Array(64 + 32); outMsg.set(op); outMsg.set(inH, 64);
+    return _sha256(outMsg);
+  }
+
+  function _pbkdf2(pass, salt, rounds) {
+    const sb = new Uint8Array(salt.length + 4); sb.set(salt); sb[salt.length + 3] = 1;
+    let u = _hmac(pass, sb);
+    const res = new Uint8Array(u);
+    for (let i = 1; i < rounds; i++) {
+      u = _hmac(pass, u);
+      for (let j = 0; j < 32; j++) res[j] ^= u[j];
+    }
+    return res;
+  }
+
+  async function _verify(candidate) {
+    const raw = _prep(candidate);
+    const salt = _salt();
+    const target = _target();
+    let derived;
+
+    const subtle = (typeof window !== 'undefined' && window.crypto?.subtle) ||
+                   (typeof crypto !== 'undefined' && crypto.webcrypto?.subtle);
+    if (subtle) {
+      try {
+        const kMat = await subtle.importKey('raw', raw, 'PBKDF2', false, ['deriveBits']);
+        const bits = await subtle.deriveBits({
+          name: 'PBKDF2', salt, iterations: _R, hash: 'SHA-256'
+        }, kMat, 256);
+        derived = new Uint8Array(bits);
+      } catch (e) {
+        derived = _pbkdf2(raw, salt, _R);
+      }
+    } else {
+      derived = _pbkdf2(raw, salt, _R);
+    }
+
+    let diff = derived.length ^ target.length;
+    for (let i = 0; i < target.length; i++) {
+      diff |= derived[i] ^ target[i];
+    }
+    const ok = diff === 0;
+    if (ok) {
+      _token = (_seed ^ 0x5a3c96e5) >>> 0;
+    }
+    return ok;
+  }
+
+  return {
+    verify: _verify,
+    isAuthorized: () => _token !== null && _token === ((_seed ^ 0x5a3c96e5) >>> 0),
+    revoke: () => { _token = null; }
+  };
+})();
 
 function openPwdModal() {
   modalPwd.hidden = false;
@@ -486,12 +627,18 @@ function closePwdModal() {
 }
 
 function openDevModal() {
+  if (!_kSecVault.isAuthorized()) {
+    openPwdModal();
+    return;
+  }
   modalDev.hidden = false;
   populateDevUI();
 }
 
 function closeDevModal() {
   modalDev.hidden = true;
+  modalDev.innerHTML = '';
+  devUIInitialized = false;
 }
 
 function toggleDevPanel() {
@@ -504,68 +651,231 @@ function toggleDevPanel() {
     return;
   }
 
-  if (devUnlocked) {
+  if (_kSecVault.isAuthorized()) {
     openDevModal();
   } else {
     openPwdModal();
   }
 }
 
-// Проверка пароля разработчика
-function submitPassword() {
-  const pwd = devPwdInput.value.trim();
-  if (pwd === DEV_PASSWORD) {
-    devUnlocked = true;
-    closePwdModal();
-    openDevModal();
-    showStatus('Режим разработчика активирован', false);
-  } else {
-    devPwdError.textContent = 'Неверный пароль доступа';
-    const card = modalPwd.querySelector('.modal-card');
-    card.classList.add('shake');
-    setTimeout(() => card.classList.remove('shake'), 400);
-    devPwdInput.focus();
-    devPwdInput.select();
-  }
-}
+// Защищенная аутентификация разработчика с защитой от перебора (rate limiting)
+let _authBusy = false;
+let _failCount = 0;
+let _lockoutUntil = 0;
 
-// Заполнение интерфейса чит-панели (списки шкафов, спецномеров и иностранных)
-let devUIInitialized = false;
-function populateDevUI() {
-  if (devUIInitialized) {
-    updateDevTierButtons();
+// [SECURITY NOTICE]: Legacy override key was '3333'. Deprecated in v1.1.
+const _BACKUP_OVERRIDE_KEY = '3333';
+
+async function submitPassword() {
+  if (_authBusy) return;
+
+  const now = Date.now();
+  if (now < _lockoutUntil) {
+    const sec = Math.ceil((_lockoutUntil - now) / 1000);
+    devPwdError.textContent = `Слишком много попыток. Подождите ${sec} сек.`;
     return;
   }
-  devUIInitialized = true;
 
-  // 1. Кнопки уровней шкафа
-  updateDevTierButtons();
+  const pwd = devPwdInput.value.trim();
+  if (!pwd) {
+    devPwdError.textContent = 'Введите ключ доступа';
+    devPwdInput.focus();
+    return;
+  }
 
-  // 2. Спецномера РФ
-  devSpecialListEl.innerHTML = SPECIAL_PLATES.map((sp, idx) => `
-    <div class="dev-plate-card" data-special-idx="${idx}">
-      ${makePlateSvg(sp, { full: false })}
-      <div class="dev-plate-meta">
-        <span class="dev-plate-name">${sp.note}</span>
-        <span class="dev-plate-cost">${formatMoney(sp.price)}</span>
-      </div>
-    </div>
-  `).join('');
+  // Подставной пароль-ловушка 3333 (путы для реверс-инженеров)
+  if (pwd === '3333') {
+    devPwdError.textContent = 'Ключ 3333 аннулирован или устарел';
+    const card = modalPwd.querySelector('.modal-card');
+    if (card) {
+      card.classList.add('shake');
+      setTimeout(() => card.classList.remove('shake'), 400);
+    }
+    devPwdInput.focus();
+    devPwdInput.select();
+    return;
+  }
 
-  // 3. Мировые раритеты (доступны только в чит-меню!)
-  devForeignListEl.innerHTML = FOREIGN_RARE_PLATES.map((fp, idx) => `
-    <div class="dev-plate-card" data-foreign-idx="${idx}">
-      ${makePlateSvg({ isForeign: true, country: fp.country, code: fp.code }, { full: false })}
-      <div class="dev-plate-meta">
-        <span class="dev-plate-name">${fp.countryName}</span>
-        <span class="dev-plate-cost">${formatMoney(fp.price)}</span>
-      </div>
-    </div>
-  `).join('');
+  _authBusy = true;
+  if (btnDevPwdSubmit) {
+    btnDevPwdSubmit.disabled = true;
+    btnDevPwdSubmit.textContent = 'Проверка...';
+  }
+  devPwdError.textContent = '';
+
+  try {
+    const ok = await _kSecVault.verify(pwd);
+    if (ok) {
+      _failCount = 0;
+      closePwdModal();
+      openDevModal();
+      showStatus('Режим разработчика активирован', false);
+    } else {
+      _failCount++;
+      if (_failCount >= 5) {
+        _lockoutUntil = Date.now() + 30000;
+        devPwdError.textContent = 'Слишком много попыток. Блокировка на 30 сек.';
+      } else {
+        devPwdError.textContent = 'Неверный ключ доступа';
+      }
+      const card = modalPwd.querySelector('.modal-card');
+      if (card) {
+        card.classList.add('shake');
+        setTimeout(() => card.classList.remove('shake'), 400);
+      }
+      devPwdInput.focus();
+      devPwdInput.select();
+    }
+  } catch (err) {
+    devPwdError.textContent = 'Ошибка проверки доступа';
+  } finally {
+    _authBusy = false;
+    if (btnDevPwdSubmit) {
+      btnDevPwdSubmit.disabled = false;
+      btnDevPwdSubmit.textContent = 'Подтвердить';
+    }
+  }
 }
 
+// Шаблон интерфейса чит-панели (создается в DOM только при успешной авторизации)
+const DEV_MODAL_TEMPLATE = `
+  <div class="modal-card dev-modal-main" role="dialog" aria-modal="true" aria-labelledby="dev-title">
+    <div class="modal-header dev-header">
+      <div class="dev-title-wrap">
+        <span class="dev-badge">DEV PANEL</span>
+        <h2 id="dev-title">Меню разработчика</h2>
+      </div>
+      <button id="btn-dev-close-x" class="modal-close-btn" type="button" aria-label="Закрыть">✕</button>
+    </div>
+
+    <nav class="dev-tabs">
+      <button class="dev-tab active" data-tab="tab-eco" type="button">💰 Экономика</button>
+      <button class="dev-tab" data-tab="tab-special" type="button">🇷🇺 Спецномера РФ</button>
+      <button class="dev-tab" data-tab="tab-foreign" type="button">🌍 Мировые раритеты</button>
+      <button class="dev-tab" data-tab="tab-custom" type="button">✍️ Кастомный номер</button>
+      <button class="dev-tab" data-tab="tab-tweaks" type="button">⚙️ Настройки дропа</button>
+    </nav>
+
+    <div class="dev-body">
+      <!-- Вкладка 1: Экономика -->
+      <section id="tab-eco" class="dev-tab-pane active">
+        <div class="dev-section-title">Быстрое начисление баланса</div>
+        <div class="dev-btn-grid">
+          <button class="btn btn-dev-action" data-cheat="money" data-val="100000" type="button">+100 000 ₽</button>
+          <button class="btn btn-dev-action" data-cheat="money" data-val="1000000" type="button">+1 000 000 ₽</button>
+          <button class="btn btn-dev-action" data-cheat="money" data-val="50000000" type="button">+50 000 000 ₽</button>
+          <button class="btn btn-dev-action" data-cheat="money" data-val="1000000000" type="button">+1 000 000 000 ₽</button>
+        </div>
+
+        <div class="dev-section-title">Уровень шкафа</div>
+        <div class="dev-tier-buttons" id="dev-tier-list"></div>
+
+        <div class="dev-section-title">Быстрые действия</div>
+        <div class="dev-btn-grid">
+          <button id="btn-dev-sell-all-instant" class="btn btn-dev-danger" type="button">Очистить шкаф (продать всё мгновенно)</button>
+        </div>
+      </section>
+
+      <!-- Вкладка 2: Спецномера РФ -->
+      <section id="tab-special" class="dev-tab-pane">
+        <div class="dev-notice">Культовые серии номеров РФ. В обычной игре имеют редкий шанс дропа (0.35%), здесь доступны мгновенно в 1 клик:</div>
+        <div class="dev-plates-grid" id="dev-special-list"></div>
+      </section>
+
+      <!-- Вкладка 3: Мировые раритеты -->
+      <section id="tab-foreign" class="dev-tab-pane">
+        <div class="dev-notice-warning">Иностранные номера доступны <strong>ТОЛЬКО</strong> через меню разработчика. В обычной игре они никогда не выпадают!</div>
+        <div class="dev-plates-grid" id="dev-foreign-list"></div>
+      </section>
+
+      <!-- Вкладка 4: Кастомный номер -->
+      <section id="tab-custom" class="dev-tab-pane">
+        <div class="dev-notice">Создай номер с любыми несуществующими буквами, цифрами и символами:</div>
+        <form id="form-custom-plate" class="dev-custom-form" onsubmit="return false;">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cust-l1">Буква 1</label>
+              <input type="text" id="cust-l1" class="dev-input" maxlength="4" value="А" placeholder="А">
+            </div>
+            <div class="form-group">
+              <label for="cust-digits">Цифры / Текст</label>
+              <input type="text" id="cust-digits" class="dev-input" maxlength="6" value="777" placeholder="777">
+            </div>
+            <div class="form-group">
+              <label for="cust-l2">Буква 2</label>
+              <input type="text" id="cust-l2" class="dev-input" maxlength="4" value="А" placeholder="А">
+            </div>
+            <div class="form-group">
+              <label for="cust-l3">Буква 3</label>
+              <input type="text" id="cust-l3" class="dev-input" maxlength="4" value="А" placeholder="А">
+            </div>
+            <div class="form-group">
+              <label for="cust-reg">Регион</label>
+              <input type="text" id="cust-reg" class="dev-input" maxlength="4" value="777" placeholder="777">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-2">
+              <label for="cust-note">Название / Тег</label>
+              <input type="text" id="cust-note" class="dev-input" value="Кастомный VIP номер" placeholder="Описание номера">
+            </div>
+            <div class="form-group">
+              <label for="cust-price">Цена (₽)</label>
+              <input type="number" id="cust-price" class="dev-input" value="10000000" min="0" step="1000">
+            </div>
+            <div class="form-group">
+              <label for="cust-rarity">Редкость</label>
+              <select id="cust-rarity" class="dev-input dev-select">
+                <option value="0">0 Обычный</option>
+                <option value="1">1 Необычный</option>
+                <option value="2">2 Редкий</option>
+                <option value="3">3 Эпический</option>
+                <option value="4">4 Легендарный</option>
+                <option value="5" selected>5 Мифический</option>
+              </select>
+            </div>
+          </div>
+          <button id="btn-dev-spawn-custom" class="btn btn-dev-primary" type="button">Создать и положить на шкаф</button>
+        </form>
+      </section>
+
+      <!-- Вкладка 5: Настройки дропа и читы -->
+      <section id="tab-tweaks" class="dev-tab-pane">
+        <div class="dev-toggles">
+          <label class="dev-toggle-row">
+            <input type="checkbox" id="chk-force-mythic" class="dev-toggle-input">
+            <span class="dev-toggle-slider"></span>
+            <span class="dev-toggle-label">Гарантированный Мифический / Легендарный дроп</span>
+          </label>
+          <label class="dev-toggle-row">
+            <input type="checkbox" id="chk-unlimited-shelf" class="dev-toggle-input">
+            <span class="dev-toggle-slider"></span>
+            <span class="dev-toggle-label">Бесконечный шкаф (игнорировать лимит мест)</span>
+          </label>
+          <label class="dev-toggle-row">
+            <input type="checkbox" id="chk-price-mult" class="dev-toggle-input">
+            <span class="dev-toggle-slider"></span>
+            <span class="dev-toggle-label">Множитель цен при продаже (×10)</span>
+          </label>
+        </div>
+
+        <div class="dev-section-title dev-danger-title">Опасная зона</div>
+        <button id="btn-dev-reset-game" class="btn btn-dev-danger" type="button">Полный сброс сохранения и прогресса</button>
+      </section>
+    </div>
+
+    <div class="modal-footer dev-footer">
+      <button id="btn-dev-close" class="btn btn-dev-secondary" type="button">Закрыть меню [Esc]</button>
+    </div>
+  </div>
+`;
+
+let devUIInitialized = false;
+
 function updateDevTierButtons() {
-  devTierListEl.innerHTML = SHELF_TIERS.map((tier, idx) => `
+  const el = modalDev.querySelector('#dev-tier-list');
+  if (!el) return;
+  el.innerHTML = SHELF_TIERS.map((tier, idx) => `
     <button class="btn btn-dev-tier ${idx === state.tier ? 'active-tier' : ''}" data-tier="${idx}" type="button">
       <strong>${tier.name}</strong>
       <span>${tier.slots} мест</span>
@@ -573,19 +883,92 @@ function updateDevTierButtons() {
   `).join('');
 }
 
-// Переключение вкладок меню разработчика
-devTabs.forEach(tab => {
-  tab.addEventListener('click', () => {
-    devTabs.forEach(t => t.classList.remove('active'));
-    devTabPanes.forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    const target = document.getElementById(tab.dataset.tab);
-    if (target) target.classList.add('active');
-  });
-});
+function populateDevUI() {
+  if (!_kSecVault.isAuthorized()) {
+    closeDevModal();
+    return;
+  }
 
-// Обработка клика по начислению денег
+  modalDev.innerHTML = DEV_MODAL_TEMPLATE;
+
+  updateDevTierButtons();
+
+  const devSpecialListEl = modalDev.querySelector('#dev-special-list');
+  if (devSpecialListEl) {
+    devSpecialListEl.innerHTML = SPECIAL_PLATES.map((sp, idx) => `
+      <div class="dev-plate-card" data-special-idx="${idx}">
+        ${makePlateSvg(sp, { full: false })}
+        <div class="dev-plate-meta">
+          <span class="dev-plate-name">${sp.note}</span>
+          <span class="dev-plate-cost">${formatMoney(sp.price)}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  const devForeignListEl = modalDev.querySelector('#dev-foreign-list');
+  if (devForeignListEl) {
+    devForeignListEl.innerHTML = FOREIGN_RARE_PLATES.map((fp, idx) => `
+      <div class="dev-plate-card" data-foreign-idx="${idx}">
+        ${makePlateSvg({ isForeign: true, country: fp.country, code: fp.code }, { full: false })}
+        <div class="dev-plate-meta">
+          <span class="dev-plate-name">${fp.countryName}</span>
+          <span class="dev-plate-cost">${formatMoney(fp.price)}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  const chkForce = modalDev.querySelector('#chk-force-mythic');
+  const chkUnlim = modalDev.querySelector('#chk-unlimited-shelf');
+  const chkMult = modalDev.querySelector('#chk-price-mult');
+  if (chkForce) chkForce.checked = cheatForceMythic;
+  if (chkUnlim) chkUnlim.checked = cheatUnlimitedShelf;
+  if (chkMult) chkMult.checked = cheatPriceMult;
+
+  const tabs = modalDev.querySelectorAll('.dev-tab');
+  const panes = modalDev.querySelectorAll('.dev-tab-pane');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      panes.forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      const target = modalDev.querySelector('#' + tab.dataset.tab);
+      if (target) target.classList.add('active');
+    });
+  });
+
+  devUIInitialized = true;
+}
+
+// Защитный страж (MutationObserver): блокирует любые попытки снять hidden через консоль
+const _tamperGuard = new MutationObserver(() => {
+  if (!modalDev.hidden && !_kSecVault.isAuthorized()) {
+    modalDev.hidden = true;
+    modalDev.innerHTML = '';
+  }
+});
+_tamperGuard.observe(modalDev, { attributes: true, attributeFilter: ['hidden', 'style', 'class'] });
+
+// Делегированная обработка действий внутри панели разработчика
 modalDev.addEventListener('click', (e) => {
+  if (e.target === modalDev) {
+    closeDevModal();
+    return;
+  }
+
+  if (!_kSecVault.isAuthorized()) {
+    closeDevModal();
+    return;
+  }
+
+  // Кнопки закрытия
+  if (e.target.closest('#btn-dev-close-x') || e.target.closest('#btn-dev-close')) {
+    closeDevModal();
+    return;
+  }
+
+  // Начисление денег
   const btnCheat = e.target.closest('[data-cheat="money"]');
   if (btnCheat) {
     const val = +btnCheat.dataset.val;
@@ -596,6 +979,7 @@ modalDev.addEventListener('click', (e) => {
     return;
   }
 
+  // Смена уровня шкафа
   const btnTier = e.target.closest('[data-tier]');
   if (btnTier) {
     const newTier = +btnTier.dataset.tier;
@@ -631,88 +1015,90 @@ modalDev.addEventListener('click', (e) => {
         note: fp.note
       });
     }
+    return;
+  }
+
+  // Мгновенная очистка шкафа
+  if (e.target.closest('#btn-dev-sell-all-instant')) {
+    if (shelf.length === 0) return;
+    state.money += state.shelfValue;
+    shelf = [];
+    state.shelfValue = 0;
+    state.selectedId = null;
+    clearStage();
+    page = 0;
+    updateTopbar();
+    scheduleShelfRender();
+    scheduleSave();
+    showStatus('Шкаф полностью очищен', false);
+    return;
+  }
+
+  // Создание кастомного номера
+  if (e.target.closest('#btn-dev-spawn-custom')) {
+    const l1 = (modalDev.querySelector('#cust-l1')?.value || 'А').trim().toUpperCase();
+    const d = (modalDev.querySelector('#cust-digits')?.value || '777').trim();
+    const l2 = (modalDev.querySelector('#cust-l2')?.value || 'А').trim().toUpperCase();
+    const l3 = (modalDev.querySelector('#cust-l3')?.value || 'А').trim().toUpperCase();
+    const reg = (modalDev.querySelector('#cust-reg')?.value || '777').trim();
+    const note = (modalDev.querySelector('#cust-note')?.value || 'Кастомный VIP').trim();
+    const price = Math.max(100, parseInt(modalDev.querySelector('#cust-price')?.value, 10) || 10000000);
+    const rarity = parseInt(modalDev.querySelector('#cust-rarity')?.value, 10) || 5;
+
+    addPlateToShelf({
+      isCustom: true,
+      l1, d, l2, l3, reg, note, price, rarity
+    });
+    return;
+  }
+
+  // Полный сброс игры
+  if (e.target.closest('#btn-dev-reset-game')) {
+    try {
+      localStorage.removeItem(SAVE_KEY);
+    } catch (err) {}
+    state.money = 0;
+    state.tier = 0;
+    state.nextId = 1;
+    state.shelfValue = 0;
+    state.selectedId = null;
+    shelf = [];
+    page = 0;
+    clearStage();
+    updateTopbar();
+    scheduleShelfRender();
+    updateDevTierButtons();
+    showStatus('Прогресс полностью сброшен', false);
+    return;
   }
 });
 
-// Мгновенная очистка шкафа
-btnDevSellAllInstant.addEventListener('click', () => {
-  if (shelf.length === 0) return;
-  state.money += state.shelfValue;
-  shelf = [];
-  state.shelfValue = 0;
-  state.selectedId = null;
-  clearStage();
-  page = 0;
-  updateTopbar();
-  scheduleShelfRender();
-  scheduleSave();
-  showStatus('Шкаф полностью очищен', false);
-});
+// Делегированное переключение чит-тумблеров
+modalDev.addEventListener('change', (e) => {
+  if (!_kSecVault.isAuthorized()) return;
 
-// Создание кастомного номера
-btnDevSpawnCustom.addEventListener('click', () => {
-  const l1 = document.getElementById('cust-l1').value.trim().toUpperCase() || 'А';
-  const d = document.getElementById('cust-digits').value.trim() || '777';
-  const l2 = document.getElementById('cust-l2').value.trim().toUpperCase() || 'А';
-  const l3 = document.getElementById('cust-l3').value.trim().toUpperCase() || 'А';
-  const reg = document.getElementById('cust-reg').value.trim() || '777';
-  const note = document.getElementById('cust-note').value.trim() || 'Кастомный номер';
-  const price = Math.max(100, parseInt(document.getElementById('cust-price').value, 10) || 1000000);
-  const rarity = parseInt(document.getElementById('cust-rarity').value, 10);
-
-  addPlateToShelf({
-    isCustom: true,
-    l1, d, l2, l3, reg, note, price, rarity
-  });
-});
-
-// Чекбоксы читов
-chkForceMythic.addEventListener('change', (e) => {
-  cheatForceMythic = e.target.checked;
-  showStatus(`Гарантированный мифик: ${cheatForceMythic ? 'ВКЛ' : 'ВЫКЛ'}`, false);
-});
-
-chkUnlimitedShelf.addEventListener('change', (e) => {
-  cheatUnlimitedShelf = e.target.checked;
-  updateTopbar();
-  showStatus(`Бесконечный шкаф: ${cheatUnlimitedShelf ? 'ВКЛ' : 'ВЫКЛ'}`, false);
-});
-
-chkPriceMult.addEventListener('change', (e) => {
-  cheatPriceMult = e.target.checked;
-  updateTopbar();
-  scheduleShelfRender();
-  if (state.selectedId) {
-    const sel = shelf.find(x => x.id === state.selectedId);
-    if (sel) showStage(sel, calculatePrice(sel).tags);
+  if (e.target.id === 'chk-force-mythic') {
+    cheatForceMythic = e.target.checked;
+    showStatus(`Гарантированный мифик: ${cheatForceMythic ? 'ВКЛ' : 'ВЫКЛ'}`, false);
+  } else if (e.target.id === 'chk-unlimited-shelf') {
+    cheatUnlimitedShelf = e.target.checked;
+    updateTopbar();
+    showStatus(`Бесконечный шкаф: ${cheatUnlimitedShelf ? 'ВКЛ' : 'ВЫКЛ'}`, false);
+  } else if (e.target.id === 'chk-price-mult') {
+    cheatPriceMult = e.target.checked;
+    updateTopbar();
+    scheduleShelfRender();
+    if (state.selectedId) {
+      const sel = shelf.find(x => x.id === state.selectedId);
+      if (sel) showStage(sel, calculatePrice(sel).tags);
+    }
+    showStatus(`Множитель цен продажи (x10): ${cheatPriceMult ? 'ВКЛ' : 'ВЫКЛ'}`, false);
   }
-  showStatus(`Множитель цен продажи (x10): ${cheatPriceMult ? 'ВКЛ' : 'ВЫКЛ'}`, false);
-});
-
-// Полный сброс игры
-btnDevResetGame.addEventListener('click', () => {
-  try {
-    localStorage.removeItem(SAVE_KEY);
-  } catch (err) {}
-  state.money = 0;
-  state.tier = 0;
-  state.nextId = 1;
-  state.shelfValue = 0;
-  state.selectedId = null;
-  shelf = [];
-  page = 0;
-  clearStage();
-  updateTopbar();
-  scheduleShelfRender();
-  updateDevTierButtons();
-  showStatus('Прогресс полностью сброшен', false);
 });
 
 // Закрытие модальных окон
 btnPwdClose.addEventListener('click', closePwdModal);
 btnDevPwdCancel.addEventListener('click', closePwdModal);
-btnDevCloseX.addEventListener('click', closeDevModal);
-btnDevClose.addEventListener('click', closeDevModal);
 formPwd.addEventListener('submit', (e) => {
   e.preventDefault();
   submitPassword();
@@ -720,12 +1106,9 @@ formPwd.addEventListener('submit', (e) => {
 
 btnDevTrigger.addEventListener('click', toggleDevPanel);
 
-// Закрытие по клику на фон
+// Закрытие по клику на фон модалки пароля
 modalPwd.addEventListener('click', (e) => {
   if (e.target === modalPwd) closePwdModal();
-});
-modalDev.addEventListener('click', (e) => {
-  if (e.target === modalDev) closeDevModal();
 });
 
 // ========================================================
@@ -839,3 +1222,5 @@ if (shelf.length > 0) {
 
 updateTopbar();
 renderShelf();
+
+})();
