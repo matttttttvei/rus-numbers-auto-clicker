@@ -1447,16 +1447,7 @@ function handleVerifiedGetPlate(e, source) {
     return;
   }
 
-  // Уровень 2: Проверка координат клика для мыши и тача
-  if (source === 'pointer') {
-    const rect = btnGet.getBoundingClientRect();
-    const x = e.clientX;
-    const y = e.clientY;
-    if ((x === 0 && y === 0) || x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-      showStatus('🛡️ Античит: некорректные координаты клика!', true);
-      return;
-    }
-  }
+
 
   // Уровень 3: Кулдаун 90 мс и блокировка за быстрый спам (более 6 раз подряд)
   const delta = _lastPlateClickTime > 0 ? (now - _lastPlateClickTime) : 1000;
