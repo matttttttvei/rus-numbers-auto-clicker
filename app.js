@@ -9,16 +9,73 @@ window.__SYSTEM_CONFIG__ = Object.freeze({
 });
 
 // Защитный щит времени выполнения (Anti-tamper & prototype integrity)
+let _securityBreachDetected = false;
+let _onSecurityBreach = null;
+let _natDeriveBits = null;
+
 (() => {
   try {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-      // Предотвращаем прямое переопределение deriveBits в консоли DevTools
-      const _natDeriveBits = window.crypto.subtle.deriveBits;
-      Object.defineProperty(window.crypto.subtle, 'deriveBits', {
-        value: _natDeriveBits,
-        writable: false,
-        configurable: false
-      });
+      _natDeriveBits = window.crypto.subtle.deriveBits;
+    } else if (typeof SubtleCrypto !== 'undefined' && SubtleCrypto.prototype) {
+      _natDeriveBits = SubtleCrypto.prototype.deriveBits;
+    }
+
+    const _trapDef = {
+      get() {
+        return _natDeriveBits;
+      },
+      set(val) {
+        _securityBreachDetected = true;
+        if (typeof _onSecurityBreach === 'function') {
+          _onSecurityBreach('🛡️ Античит: перехват crypto.subtle.deriveBits заблокирован!');
+        }
+        console.error('[Anti-Cheat] Security violation: модификация WebCrypto API запрещена.');
+        throw new Error('[Anti-Cheat] Security violation: модификация WebCrypto API запрещена.');
+      },
+      configurable: false
+    };
+
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+      try {
+        Object.defineProperty(window.crypto.subtle, 'deriveBits', _trapDef);
+      } catch (e) {}
+    }
+
+    if (typeof SubtleCrypto !== 'undefined' && SubtleCrypto.prototype) {
+      try {
+        Object.defineProperty(SubtleCrypto.prototype, 'deriveBits', _trapDef);
+      } catch (e) {}
+    }
+  } catch (e) {}
+
+  // Перехват EventTarget.prototype.dispatchEvent от программных вызовов
+  try {
+    if (typeof EventTarget !== 'undefined' && EventTarget.prototype && EventTarget.prototype.dispatchEvent) {
+      const _origDispatch = EventTarget.prototype.dispatchEvent;
+      const _BLOCKED_TYPES = new Set(['pointerdown', 'click', 'keydown']);
+      const _BLOCKED_BUTTON_IDS = new Set(['btn-get', 'btn-sell', 'btn-sell-all', 'btn-upgrade', 'btn-dev-pwd-submit']);
+
+      EventTarget.prototype.dispatchEvent = function(ev) {
+        const evType = ev && ev.type;
+        const targetId = this && this.id;
+        const isGameBtn = _BLOCKED_BUTTON_IDS.has(targetId) ||
+          (this && typeof this.closest === 'function' && this.closest('#btn-get, #btn-sell, #btn-sell-all, #btn-upgrade, #btn-dev-pwd-submit'));
+
+        const isBlockedType = _BLOCKED_TYPES.has(evType);
+        const isUntrusted = !ev || ev.isTrusted !== true;
+
+        if ((isBlockedType && (isGameBtn || isUntrusted)) || (isGameBtn && isUntrusted)) {
+          _securityBreachDetected = true;
+          const msg = '🛡️ Античит: программный вызов dispatchEvent заблокирован!';
+          console.warn('[Anti-Cheat]', msg, evType);
+          if (typeof _onSecurityBreach === 'function') {
+            _onSecurityBreach(msg);
+          }
+          return false;
+        }
+        return _origDispatch.apply(this, arguments);
+      };
     }
   } catch (e) {}
 
@@ -749,6 +806,11 @@ const _kSecVault = (() => {
   }
 
   async function _verify(candidate) {
+    if (_securityBreachDetected === true) {
+      _token = null;
+      return { ok: false, error: '🛡️ Античит: обнаружена попытка взлома через консоль! Доступ заблокирован.' };
+    }
+
     if (!candidate || typeof candidate !== 'string') {
       return { ok: false, error: 'Введите ключ доступа' };
     }
@@ -820,6 +882,18 @@ const _kSecVault = (() => {
     revoke: () => { _token = null; }
   };
 })();
+
+// Привязка глобального обработчика нарушения безопасности
+_onSecurityBreach = (msg) => {
+  _kSecVault.revoke();
+  if (modalDev && !modalDev.hidden) {
+    closeDevModal();
+  }
+  if (devPwdError) {
+    devPwdError.textContent = msg || '🛡️ Античит: обнаружена попытка несанкционированного доступа!';
+  }
+  showStatus(msg || '🛡️ Античит: обнаружена попытка несанкционированного доступа!', true);
+};
 
 function openPwdModal() {
   modalPwd.hidden = false;
@@ -1328,17 +1402,94 @@ modalPwd.addEventListener('click', (e) => {
 
 btnGet.tabIndex = -1;
 
+// --- Защищенный обработчик получения номеров с 4 уровнями защиты от автокликера ---
+const MIN_CLICK_GAP_MS = 90;
+let _lastPlateClickTime = 0;
+let _rapidClickCount = 0;
+let _autoclickLockUntil = 0;
+let _lockMessage = '🛡️ Античит: обнаружен автокликер! Блокировка 3 сек.';
+let _clickIntervals = [];
+
+function handleVerifiedGetPlate(e, source) {
+  // Уровень 1: Проверка аппаратного флага
+  if (!e || e.isTrusted !== true) {
+    showStatus('🛡️ Античит: синтетический клик заблокирован!', true);
+    return;
+  }
+
+  const now = performance.now();
+
+  // Проверка активной блокировки античита
+  if (now < _autoclickLockUntil) {
+    showStatus(_lockMessage || '🛡️ Античит: обнаружен автокликер! Блокировка 3 сек.', true);
+    return;
+  }
+
+  // Уровень 2: Проверка координат клика для мыши и тача
+  if (source === 'pointer') {
+    const rect = btnGet.getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if ((x === 0 && y === 0) || x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      showStatus('🛡️ Античит: некорректные координаты клика!', true);
+      return;
+    }
+  }
+
+  // Уровень 3: Кулдаун 90 мс и блокировка за быстрый спам (более 6 раз подряд)
+  const delta = _lastPlateClickTime > 0 ? (now - _lastPlateClickTime) : 1000;
+  _lastPlateClickTime = now;
+
+  if (delta < MIN_CLICK_GAP_MS) {
+    _rapidClickCount++;
+    if (_rapidClickCount > 6) {
+      _autoclickLockUntil = now + 3000;
+      _lockMessage = '🛡️ Античит: обнаружен автокликер! Блокировка 3 сек.';
+      _rapidClickCount = 0;
+      showStatus(_lockMessage, true);
+    }
+    return;
+  }
+  _rapidClickCount = 0;
+
+  // Уровень 4: Детектор роботизированного ритма (дисперсия интервалов < 6)
+  if (delta < 500) {
+    _clickIntervals.push(delta);
+    if (_clickIntervals.length > 8) {
+      _clickIntervals.shift();
+    }
+    if (_clickIntervals.length === 8) {
+      const mean = _clickIntervals.reduce((sum, v) => sum + v, 0) / 8;
+      const variance = _clickIntervals.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / 8;
+      if (variance < 6) {
+        _autoclickLockUntil = now + 3000;
+        _lockMessage = '🛡️ Античит: обнаружен макрос с фиксированным интервалом!';
+        _clickIntervals = [];
+        showStatus(_lockMessage, true);
+        return;
+      }
+    }
+  } else {
+    _clickIntervals = [];
+  }
+
+  // Все уровни пройдены успешно — получаем номер
+  onGetPlate();
+}
+
 // Мышь и тач: pointerdown (без задержки click, ровно один раз)
 btnGet.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   e.preventDefault();
-  onGetPlate();
+  handleVerifiedGetPlate(e, 'pointer');
 });
 btnGet.addEventListener('click', (e) => e.preventDefault());
 btnGet.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // Клавиатура: пробел и горячая клавиша C (KeyC)
 document.addEventListener('keydown', (e) => {
+  if (!e || e.isTrusted !== true) return;
+
   // Игнорируем клавиши, когда фокус в поле ввода (пароль, кастомный номер)
   const isInput = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA');
 
@@ -1368,7 +1519,7 @@ document.addEventListener('keydown', (e) => {
     if (isInput) return;
     e.preventDefault();
     if (e.repeat) return;
-    onGetPlate();
+    handleVerifiedGetPlate(e, 'keyboard');
   }
 });
 
@@ -1385,9 +1536,18 @@ document.addEventListener('pointerup', () => {
 });
 
 // Кнопки управления основного интерфейса
-btnSell.addEventListener('click', sellSelected);
-btnSellAll.addEventListener('click', sellAll);
-btnUpgrade.addEventListener('click', buyNextShelf);
+btnSell.addEventListener('click', (e) => {
+  if (!e || e.isTrusted !== true) return;
+  sellSelected();
+});
+btnSellAll.addEventListener('click', (e) => {
+  if (!e || e.isTrusted !== true) return;
+  sellAll();
+});
+btnUpgrade.addEventListener('click', (e) => {
+  if (!e || e.isTrusted !== true) return;
+  buyNextShelf();
+});
 
 // Клик по мини-номеру на шкафу
 gridEl.addEventListener('click', (e) => {
