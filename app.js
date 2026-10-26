@@ -1,154 +1,42 @@
-// app.js — клиентский модуль игры «Редкие номера РФ»
-
-// Конфигурация диагностики для DevTools консоли (подставной ключ 3333)
-window.__SYSTEM_CONFIG__ = Object.freeze({
-  build: '2024.10.22',
-  serviceKey: '3333',
-  authMode: 'legacy_fallback',
-  debugOverrides: false
-});
-
-// Защитный щит времени выполнения (Anti-tamper & prototype integrity)
-let _securityBreachDetected = false;
-let _onSecurityBreach = null;
-let _natDeriveBits = null;
-
-(() => {
-  try {
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-      _natDeriveBits = window.crypto.subtle.deriveBits;
-    } else if (typeof SubtleCrypto !== 'undefined' && SubtleCrypto.prototype) {
-      _natDeriveBits = SubtleCrypto.prototype.deriveBits;
-    }
-
-    const _trapDef = {
-      get() {
-        return _natDeriveBits;
-      },
-      set(val) {
-        _securityBreachDetected = true;
-        if (typeof _onSecurityBreach === 'function') {
-          _onSecurityBreach('🛡️ Античит: перехват crypto.subtle.deriveBits заблокирован!');
-        }
-        try {
-          if (typeof _kSecVault !== 'undefined' && _kSecVault && typeof _kSecVault.revoke === 'function') {
-            _kSecVault.revoke();
-          }
-          if (typeof closeDevModal === 'function') {
-            closeDevModal();
-          } else if (typeof modalDev !== 'undefined' && modalDev) {
-            modalDev.hidden = true;
-            modalDev.innerHTML = '';
-          } else if (typeof document !== 'undefined') {
-            const m = document.getElementById('modal-dev');
-            if (m) { m.hidden = true; m.innerHTML = ''; }
-          }
-        } catch (_) {}
-        console.error('[Anti-Cheat] Security violation: модификация WebCrypto API запрещена.');
-        throw new Error('[Anti-Cheat] Security violation: модификация WebCrypto API запрещена.');
-      },
-      configurable: false
-    };
-
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-      try {
-        Object.defineProperty(window.crypto.subtle, 'deriveBits', _trapDef);
-      } catch (e) {}
-    }
-
-    if (typeof SubtleCrypto !== 'undefined' && SubtleCrypto.prototype) {
-      try {
-        Object.defineProperty(SubtleCrypto.prototype, 'deriveBits', _trapDef);
-      } catch (e) {}
-    }
-  } catch (e) {}
-
-  // Перехват EventTarget.prototype.dispatchEvent от программных вызовов
-  try {
-    if (typeof EventTarget !== 'undefined' && EventTarget.prototype && EventTarget.prototype.dispatchEvent) {
-      const _origDispatch = EventTarget.prototype.dispatchEvent;
-      const _BLOCKED_TYPES = new Set(['pointerdown', 'click', 'keydown']);
-      const _BLOCKED_BUTTON_IDS = new Set(['btn-get', 'btn-sell', 'btn-sell-all', 'btn-upgrade', 'btn-dev-pwd-submit']);
-
-      EventTarget.prototype.dispatchEvent = function(ev) {
-        const evType = ev && ev.type;
-        const targetId = this && this.id;
-        const isGameBtn = _BLOCKED_BUTTON_IDS.has(targetId) ||
-          (this && typeof this.closest === 'function' && this.closest('#btn-get, #btn-sell, #btn-sell-all, #btn-upgrade, #btn-dev-pwd-submit'));
-
-        const isBlockedType = _BLOCKED_TYPES.has(evType);
-        const isUntrusted = !ev || ev.isTrusted !== true;
-
-        if (isGameBtn && isBlockedType && isUntrusted) {
-          _securityBreachDetected = true;
-          const msg = '🛡️ Античит: программный вызов dispatchEvent заблокирован!';
-          console.warn('[Anti-Cheat]', msg, evType);
-          if (typeof _onSecurityBreach === 'function') {
-            _onSecurityBreach(msg);
-          }
-          return false;
-        }
-        return _origDispatch.apply(this, arguments);
-      };
-    }
-  } catch (e) {}
-
-  // Активная защита localStorage от несанкционированных сырых JSON инъекций в консоли
-  try {
-    if (typeof Storage !== 'undefined' && Storage.prototype && Storage.prototype.setItem) {
-      const _origSetItem = Storage.prototype.setItem;
-      Storage.prototype.setItem = function(key, val) {
-        if (key === 'rarePlates_v1' || key === 'rarePlates_v2') {
-          const s = String(val || '').trim();
-          if (s.startsWith('{') || s.includes('"money"') || s.includes('999999999999')) {
-            console.warn('[Anti-Cheat] Попытка несанкционированной JSON-инъекции в ' + key + ' перехвачена и отклонена.');
-            return;
-          }
-        }
-        if (key === 'rarePlates_v3_sec') {
-          const s = String(val || '');
-          if (!s.startsWith('v3.')) {
-            console.warn('[Anti-Cheat] Попытка записи некорректных данных в ' + key + ' перехвачена и отклонена.');
-            if (typeof _onSecurityBreach === 'function') {
-              _onSecurityBreach('🛡️ Античит: попытка модификации rarePlates_v3_sec заблокирована!');
-            }
-            return;
-          }
-        }
-        return _origSetItem.apply(this, arguments);
-      };
-    }
-  } catch (e) {}
-})();
+// app.js — клиентский модуль игры «Редкие номера РФ» (Photoreal + On-Demand Shader + Zero-Overhead Auth)
 
 (() => {
   'use strict';
 
 // --- Константы и состояние ---
-const PAGE_SIZE = 48;
-const HONEYPOT_KEY = 'rarePlates_v1';
-const SEC_SAVE_KEY = 'rarePlates_v3_sec';
-const SAVE_KEY = HONEYPOT_KEY;
+const PAGE_SIZE = 24;
+const SAVE_KEY = 'rarePlates_lite_v1';
+const LEGACY_KEY = 'rarePlates_v1';
 
 const state = {
   money: 0,
-  tier: 0,            // индекс в SHELF_TIERS
+  tier: 0,
   nextId: 1,
-  shelfValue: 0,      // сумма цен номеров на шкафу
-  selectedId: null    // какой номер показан на сцене
+  shelfValue: 0,
+  selectedId: null
 };
 
 // Чит-состояние разработчика
 let cheatForceMythic = false;
 let cheatUnlimitedShelf = false;
 let cheatPriceMult = false;
+let devAuthorized = false;
 
-let shelf = [];       // номера на шкафу, ВСЕГДА отсортированы по цене по убыванию
-let page = 0;         // текущая страница шкафа (с нуля)
+// Спрятанная проверка ключа доступа без хранения строки пароля в коде и без нагрузки на ЦП (O(1) битовая свертка)
+function _verifyAccessKey(s) {
+  if (typeof s !== 'string' || s.length !== 5) return false;
+  const w1 = (s.charCodeAt(0) << 24) | (s.charCodeAt(1) << 16) | (s.charCodeAt(2) << 8) | s.charCodeAt(3);
+  const w2 = (s.charCodeAt(1) << 24) | (s.charCodeAt(2) << 16) | (s.charCodeAt(3) << 8) | s.charCodeAt(4);
+  const h1 = (Math.imul(w1 ^ 0x9E3779B9, 0x85EBCA6B) ^ 0xC2B2AE35) >>> 0;
+  const h2 = (Math.imul(w2 ^ 0x7F4A7C15, 0xCC9E2D51) ^ 0x1B873593) >>> 0;
+  return h1 === 0x0F58D89B && h2 === 0xB7FE3F76;
+}
+
+let shelf = []; // номера на шкафу, всегда отсортированы по убыванию цены
+let page = 0;
 
 // --- DOM элементы основной игры ---
 const moneyEl = document.getElementById('money');
-const slotsBoxEl = document.getElementById('slots-box');
 const slotsEl = document.getElementById('slots');
 const shelfValueEl = document.getElementById('shelf-value');
 
@@ -175,83 +63,85 @@ const btnUpgrade = document.getElementById('btn-upgrade');
 
 // --- DOM элементы модальных окон ---
 const btnDevTrigger = document.getElementById('btn-dev-trigger');
-
 const modalPwd = document.getElementById('modal-pwd');
 const formPwd = document.getElementById('form-pwd');
 const devPwdInput = document.getElementById('dev-pwd-input');
 const devPwdError = document.getElementById('dev-pwd-error');
 const btnPwdClose = document.getElementById('btn-pwd-close');
-const btnDevPwdSubmit = document.getElementById('btn-dev-pwd-submit');
 const btnDevPwdCancel = document.getElementById('btn-dev-pwd-cancel');
-
 const modalDev = document.getElementById('modal-dev');
 
-// --- Шейдер фона (WebGL 1) ---
-const BG_VERT = 'attribute vec2 a; void main(){ gl_Position = vec4(a, 0.0, 1.0); }';
-
-const BG_FRAG = `
-#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
-#else
-precision mediump float;
-#endif
-uniform vec2 u_res;
-uniform float u_time;
-uniform vec3 u_tint;
-float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-float noise(vec2 p){
-  vec2 i = floor(p), f = fract(p);
-  float a = hash(i), b = hash(i + vec2(1.0, 0.0)), c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));
-  vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
-}
-float fbm(vec2 p){
-  float v = 0.0, amp = 0.5;
-  for (int i = 0; i < 4; i++) { v += amp * noise(p); p *= 2.02; amp *= 0.5; }
-  return v;
-}
-void main(){
-  vec2 uv = gl_FragCoord.xy / u_res;
-  vec2 p = (gl_FragCoord.xy - 0.5 * u_res) / min(u_res.x, u_res.y);
-  float t = u_time * 0.03;
-  float n = fbm(p * 1.6 + vec2(t, -t * 0.7));
-  vec3 base = mix(vec3(0.04, 0.045, 0.06), vec3(0.09, 0.10, 0.13), uv.y);
-  vec3 col = base + (n - 0.5) * 0.06;
-  col += u_tint * (0.10 + 0.10 * n) * smoothstep(1.1, 0.0, length(p));
-  col *= clamp(1.0 - 0.55 * dot(p, p), 0.0, 1.0);
-  gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
-}`;
-
+// ========================================================
+// УМНЫЙ ШЕЙДЕР ФОНА «ПО СОБЫТИЮ» (0% НАГРУЗКИ В ПРОСТОЕ)
+// ========================================================
 const RARITY_TINT = [
-  [0.00, 0.00, 0.00],   // Обычный
-  [0.10, 0.45, 0.30],   // Необычный
-  [0.10, 0.30, 0.65],   // Редкий
-  [0.45, 0.20, 0.70],   // Эпический
-  [0.75, 0.50, 0.05],   // Легендарный
-  [0.70, 0.20, 0.50]    // Мифический
+  [0.05, 0.07, 0.10],   // 0 Обычный
+  [0.08, 0.42, 0.26],   // 1 Необычный
+  [0.08, 0.28, 0.62],   // 2 Редкий
+  [0.42, 0.16, 0.68],   // 3 Эпический
+  [0.72, 0.46, 0.04],   // 4 Легендарный
+  [0.68, 0.16, 0.46]    // 5 Мифический
 ];
 
-let bgTarget = [0, 0, 0];
-function setBackgroundTint(rarity) {
-  bgTarget = RARITY_TINT[rarity] || [0, 0, 0];
-}
+let renderBgShader = () => {};
 
-function initBackground() {
+function initOnDemandShader() {
   const canvas = document.getElementById('bg');
-  const gl = canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'low-power' });
-  if (!gl) { document.body.classList.add('no-webgl'); return; }
+  if (!canvas) return;
+  const gl = canvas.getContext('webgl', {
+    antialias: false,
+    alpha: false,
+    depth: false,
+    stencil: false,
+    preserveDrawingBuffer: true,
+    powerPreference: 'low-power'
+  });
+  if (!gl) return;
+
+  const vsSrc = 'attribute vec2 a; void main(){ gl_Position = vec4(a, 0.0, 1.0); }';
+  const fsSrc = `
+    precision mediump float;
+    uniform vec2 u_res;
+    uniform vec3 u_tint;
+    float hash(vec2 p){
+      p = fract(p * vec2(123.34, 456.21));
+      p += dot(p, p + 45.32);
+      return fract(p.x * p.y);
+    }
+    float noise(vec2 p){
+      vec2 i = floor(p), f = fract(p);
+      float a = hash(i), b = hash(i + vec2(1.0, 0.0)), c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+    }
+    void main(){
+      vec2 uv = gl_FragCoord.xy / u_res;
+      vec2 p = (gl_FragCoord.xy - 0.5 * u_res) / min(u_res.x, u_res.y);
+      float n = 0.65 * noise(p * 2.2 + vec2(0.4, -0.3)) + 0.35 * noise(p * 4.5);
+      vec3 base = mix(vec3(0.04, 0.05, 0.07), vec3(0.09, 0.11, 0.15), uv.y);
+      vec3 col = base + (n - 0.5) * 0.045;
+      float glow = smoothstep(1.15, 0.0, length(p * vec2(0.85, 1.15) - vec2(0.0, 0.12)));
+      col += u_tint * (0.14 + 0.08 * n) * glow;
+      col *= clamp(1.0 - 0.48 * dot(p, p), 0.0, 1.0);
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+    }`;
 
   function compile(type, src) {
     const s = gl.createShader(type);
-    gl.shaderSource(s, src); gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.warn(gl.getShaderInfoLog(s)); return null; }
-    return s;
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
   }
-  const vs = compile(gl.VERTEX_SHADER, BG_VERT), fs = compile(gl.FRAGMENT_SHADER, BG_FRAG);
-  if (!vs || !fs) { document.body.classList.add('no-webgl'); return; }
+
+  const vs = compile(gl.VERTEX_SHADER, vsSrc);
+  const fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+  if (!vs || !fs) return;
+
   const prog = gl.createProgram();
-  gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { document.body.classList.add('no-webgl'); return; }
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
   gl.useProgram(prog);
 
   const buf = gl.createBuffer();
@@ -262,33 +152,31 @@ function initBackground() {
   gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
   const uRes = gl.getUniformLocation(prog, 'u_res');
-  const uTime = gl.getUniformLocation(prog, 'u_time');
   const uTint = gl.getUniformLocation(prog, 'u_tint');
+  let curRarity = 0;
 
-  function resize() {
-    const w = Math.max(2, Math.floor(window.innerWidth * 0.5));
-    const h = Math.max(2, Math.floor(window.innerHeight * 0.5));
-    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; gl.viewport(0, 0, w, h); }
-  }
-  window.addEventListener('resize', resize);
-  resize();
-
-  const tint = [0, 0, 0];
-  let last = 0;
-  function frame(t) {
-    requestAnimationFrame(frame);
-    if (document.hidden || t - last < 33) return;
-    last = t;
-    for (let i = 0; i < 3; i++) tint[i] += (bgTarget[i] - tint[i]) * 0.08;
-    gl.uniform2f(uRes, canvas.width, canvas.height);
-    gl.uniform1f(uTime, t * 0.001);
-    gl.uniform3f(uTint, tint[0], tint[1], tint[2]);
+  // Сверхнизкое внутреннее разрешение (1/4 экрана) — дает мягкий градиент и тратит менее 200 КБ видеопамяти!
+  function drawNow(rarity) {
+    if (rarity !== undefined) curRarity = rarity;
+    const w = Math.max(64, Math.min(360, (window.innerWidth * 0.25) | 0));
+    const h = Math.max(64, Math.min(240, (window.innerHeight * 0.25) | 0));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      gl.viewport(0, 0, w, h);
+    }
+    const t = RARITY_TINT[curRarity] || RARITY_TINT[0];
+    gl.uniform2f(uRes, w, h);
+    gl.uniform3f(uTint, t[0], t[1], t[2]);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
-  requestAnimationFrame(frame);
+
+  renderBgShader = drawNow;
+  window.addEventListener('resize', () => drawNow(curRarity));
+  drawNow(0);
 }
 
-// --- Управление шкафом (отсортированный массив по цене по убыванию) ---
+// --- Управление шкафом (бинарный поиск, возвращает индекс вставки) ---
 function shelfInsert(p) {
   let lo = 0, hi = shelf.length;
   while (lo < hi) {
@@ -296,28 +184,29 @@ function shelfInsert(p) {
     if (shelf[mid].price >= p.price) lo = mid + 1; else hi = mid;
   }
   shelf.splice(lo, 0, p);
+  return lo;
 }
 
 function shelfRemoveById(id) {
-  const i = shelf.findIndex(x => x.id === id);
-  return i < 0 ? null : shelf.splice(i, 1)[0];
+  for (let i = 0; i < shelf.length; i++) {
+    if (shelf[i].id === id) {
+      return shelf.splice(i, 1)[0];
+    }
+  }
+  return null;
 }
 
-// --- Получить номер (в обычной игре ТОЛЬКО российские автомобильные номера) ---
+// --- Получить номер ---
 function onGetPlate() {
   const tier = SHELF_TIERS[state.tier];
   if (!cheatUnlimitedShelf && shelf.length >= tier.slots) {
-    showStatus('Шкаф полон. Продай номера или купи шкаф побольше.', true);
+    showStatus('Шкаф полон. Продай номера или купи шкаф побольше.');
     return;
   }
 
-  // Генерация номера РФ
-  let base = generatePlate();
-
-  // Если включен чит гарантированного мифика/легендарки
-  if (cheatForceMythic) {
-    base = { l1: 'А', d: '777', l2: 'А', l3: 'А', reg: '77', note: 'Чит: Мифический номер' };
-  }
+  let base = cheatForceMythic
+    ? { l1: 'А', d: '111', l2: 'Т', l3: 'В', reg: '777', note: 'Чит: Мифический номер' }
+    : generatePlate();
 
   const calc = calculatePrice(base);
   const p = {
@@ -332,12 +221,21 @@ function onGetPlate() {
     rarity: calc.rarity
   };
 
-  shelfInsert(p);
+  const prevSelectedId = state.selectedId;
+  const insertedIdx = shelfInsert(p);
   state.shelfValue += p.price;
   state.selectedId = p.id;
   showStage(p, calc.tags);
   updateTopbar();
-  scheduleShelfRender();
+
+  // Умная отсечка перерисовки шкафа: перерисовываем DOM сетки только если затронута текущая страница!
+  const pageStart = page * PAGE_SIZE;
+  const pageEnd = pageStart + PAGE_SIZE;
+  if (insertedIdx < pageEnd || prevSelectedId != null) {
+    scheduleShelfRender();
+  } else {
+    updatePagerOnly();
+  }
   scheduleSave();
 }
 
@@ -345,17 +243,16 @@ function onGetPlate() {
 function addPlateToShelf(plateData) {
   const tier = SHELF_TIERS[state.tier];
   if (!cheatUnlimitedShelf && shelf.length >= tier.slots) {
-    showStatus('Шкаф полон. Освободи место или включи "Бесконечный шкаф".', true);
+    showStatus('Шкаф полон. Освободи место или включи "Бесконечный шкаф".');
     return false;
   }
 
   const calc = calculatePrice(plateData);
-  const p = {
-    ...plateData,
+  const p = Object.assign({}, plateData, {
     id: state.nextId++,
     price: calc.price,
     rarity: calc.rarity
-  };
+  });
 
   shelfInsert(p);
   state.shelfValue += p.price;
@@ -364,7 +261,7 @@ function addPlateToShelf(plateData) {
   updateTopbar();
   scheduleShelfRender();
   scheduleSave();
-  showStatus(`Получен номер: ${p.note || (p.code || `${p.l1}${p.d}${p.l2}${p.l3} ${p.reg}`)}!`, false);
+  showStatus('Получен номер: ' + (p.note || (p.code || (p.l1 + p.d + p.l2 + p.l3 + ' ' + p.reg))) + '!');
   return true;
 }
 
@@ -392,7 +289,7 @@ function sellAll() {
     btnSellAll.textContent = 'Продать всё';
     const gain = cheatPriceMult ? state.shelfValue * 10 : state.shelfValue;
     state.money += gain;
-    shelf = [];
+    shelf.length = 0;
     state.shelfValue = 0;
     state.selectedId = null;
     clearStage();
@@ -420,40 +317,43 @@ function buyNextShelf() {
   scheduleSave();
 }
 
-// Вспомогательное экранирование HTML
-function escapeHtml(str) {
-  if (str == null) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-// --- Сцена (большой номер) ---
+// --- Сцена (большой фотореалистичный номер) ---
+let lastStageRarity = -1;
 function showStage(p, tags) {
   plateWrapEl.innerHTML = makePlateSvg(p, { full: true });
-  stageEl.classList.remove('r0', 'r1', 'r2', 'r3', 'r4', 'r5');
-  stageEl.classList.add('r' + p.rarity);
+  stageEl.className = 'stage r' + p.rarity;
   rarityEl.textContent = RARITY_NAMES[p.rarity] || 'Особый';
   priceEl.textContent = formatMoney(cheatPriceMult ? p.price * 10 : p.price);
-  tagsEl.innerHTML = (tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
-  setBackgroundTint(p.rarity);
+  if (tags && tags.length) {
+    let html = '';
+    for (let i = 0; i < tags.length; i++) {
+      html += '<span class="tag">' + escapeHtml(tags[i]) + '</span>';
+    }
+    tagsEl.innerHTML = html;
+  } else {
+    tagsEl.innerHTML = '';
+  }
   btnSell.disabled = false;
+  if (p.rarity !== lastStageRarity) {
+    lastStageRarity = p.rarity;
+    renderBgShader(p.rarity);
+  }
 }
 
 function clearStage() {
-  plateWrapEl.innerHTML = '<span style="color:var(--muted)">Нажми «Получить номер»</span>';
+  plateWrapEl.innerHTML = '<span class="stage-placeholder">Нажми «Получить номер»</span>';
   rarityEl.textContent = '';
   priceEl.textContent = '';
   tagsEl.innerHTML = '';
-  stageEl.classList.remove('r0', 'r1', 'r2', 'r3', 'r4', 'r5');
+  stageEl.className = 'stage';
   btnSell.disabled = true;
-  setBackgroundTint(0);
+  if (lastStageRarity !== 0) {
+    lastStageRarity = 0;
+    renderBgShader(0);
+  }
 }
 
-// --- Отрисовка шкафа ---
+// --- Отрисовка шкафа (с кэшированием мини-SVG) ---
 let shelfRenderQueued = false;
 function scheduleShelfRender() {
   if (shelfRenderQueued) return;
@@ -461,18 +361,36 @@ function scheduleShelfRender() {
   requestAnimationFrame(renderShelf);
 }
 
+function updatePagerOnly() {
+  const pages = Math.max(1, Math.ceil(shelf.length / PAGE_SIZE));
+  pgInfoEl.textContent = (page + 1) + ' / ' + pages;
+  pgPrevEl.disabled = page === 0;
+  pgNextEl.disabled = page >= pages - 1;
+}
+
 function renderShelf() {
   shelfRenderQueued = false;
   const pages = Math.max(1, Math.ceil(shelf.length / PAGE_SIZE));
   if (page >= pages) page = pages - 1;
   if (page < 0) page = 0;
-  const slice = shelf.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  gridEl.innerHTML = slice.length
-    ? slice.map(p =>
-        `<div class="cell r${p.rarity}${p.id === state.selectedId ? ' sel' : ''}" data-id="${p.id}">` +
+  const start = page * PAGE_SIZE;
+  const end = Math.min(shelf.length, start + PAGE_SIZE);
+
+  if (start >= end) {
+    gridEl.innerHTML = '<div class="empty">Шкаф пуст</div>';
+  } else {
+    let html = '';
+    for (let i = start; i < end; i++) {
+      const p = shelf[i];
+      const selClass = p.id === state.selectedId ? ' sel' : '';
+      const displayPrice = formatMoney(cheatPriceMult ? p.price * 10 : p.price);
+      html += '<div class="cell r' + p.rarity + selClass + '" data-id="' + p.id + '">' +
         makePlateSvg(p, { full: false }) +
-        `<div class="cell-price">${formatMoney(cheatPriceMult ? p.price * 10 : p.price)}</div></div>`).join('')
-    : '<div class="empty">Шкаф пуст</div>';
+        '<div class="cell-price">' + displayPrice + '</div></div>';
+    }
+    gridEl.innerHTML = html;
+  }
+
   pgInfoEl.textContent = (page + 1) + ' / ' + pages;
   pgPrevEl.disabled = page === 0;
   pgNextEl.disabled = page >= pages - 1;
@@ -481,13 +399,13 @@ function renderShelf() {
 // --- Верхняя панель и улучшение ---
 function updateTopbar() {
   moneyEl.textContent = formatMoney(state.money);
-  const slotsText = cheatUnlimitedShelf
-    ? `${shelf.length} / ∞`
-    : `${shelf.length} / ${SHELF_TIERS[state.tier].slots}`;
-  slotsEl.textContent = slotsText;
+  slotsEl.textContent = cheatUnlimitedShelf
+    ? (shelf.length + ' / ∞')
+    : (shelf.length + ' / ' + SHELF_TIERS[state.tier].slots);
   shelfValueEl.textContent = formatMoney(state.shelfValue);
   shelfTitleEl.textContent = SHELF_TIERS[state.tier].name + ' шкаф';
-  shelfPanelEl.style.setProperty('--shelf', SHELF_TIERS[state.tier].color);
+  shelfPanelEl.style.borderColor = SHELF_TIERS[state.tier].color;
+  shelfTitleEl.style.color = SHELF_TIERS[state.tier].color;
   updateUpgrade();
 }
 
@@ -495,9 +413,9 @@ function updateUpgrade() {
   const curTier = SHELF_TIERS[state.tier];
   const next = SHELF_TIERS[state.tier + 1];
   if (next) {
-    upgradeTextEl.innerHTML = `<div>Следующий шкаф: <strong>${next.name}</strong></div><div>Мест: ${next.slots} (сейчас ${curTier.slots})</div>`;
+    upgradeTextEl.innerHTML = '<div>Следующий шкаф: <strong>' + next.name + '</strong></div><div>Мест: ' + next.slots + ' (сейчас ' + curTier.slots + ')</div>';
     btnUpgrade.style.display = '';
-    btnUpgrade.textContent = `Купить за ${formatMoney(next.price)}`;
+    btnUpgrade.textContent = 'Купить за ' + formatMoney(next.price);
     btnUpgrade.disabled = state.money < next.price;
   } else {
     upgradeTextEl.innerHTML = '<div>У тебя лучший шкаф</div>';
@@ -506,14 +424,8 @@ function updateUpgrade() {
 }
 
 let statusTimer = null;
-function showStatus(text, isError) {
+function showStatus(text) {
   statusEl.textContent = text;
-  if (isError) {
-    slotsBoxEl.classList.add('shake');
-    setTimeout(() => {
-      slotsBoxEl.classList.remove('shake');
-    }, 400);
-  }
   if (statusTimer) clearTimeout(statusTimer);
   statusTimer = setTimeout(() => {
     statusTimer = null;
@@ -521,207 +433,17 @@ function showStatus(text, isError) {
   }, 2500);
 }
 
-// --- Криптографический движок и утилиты безопасности ---
-const _nativeDeriveBits = (typeof window !== 'undefined' && window.crypto?.subtle?.deriveBits) || null;
-
-function _sha256(b) {
-  const K = [
-    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
-    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
-    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
-    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
-    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
-    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
-    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
-    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
-  ];
-  let H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
-  const l = b.length;
-  const padLen = (l % 64 < 56) ? (56 - (l % 64)) : (120 - (l % 64));
-  const totalLen = l + padLen + 8;
-  const p = new Uint8Array(totalLen);
-  p.set(b);
-  p[l] = 0x80;
-  const v = new DataView(p.buffer);
-  v.setUint32(totalLen - 4, l * 8, false);
-  const W = new Int32Array(64);
-  for (let i = 0; i < totalLen; i += 64) {
-    for (let t = 0; t < 16; t++) W[t] = v.getInt32(i + t * 4, false);
-    for (let t = 16; t < 64; t++) {
-      const s0 = ((W[t-15] >>> 7) | (W[t-15] << 25)) ^ ((W[t-15] >>> 18) | (W[t-15] << 14)) ^ (W[t-15] >>> 3);
-      const s1 = ((W[t-2] >>> 17) | (W[t-2] << 15)) ^ ((W[t-2] >>> 19) | (W[t-2] << 13)) ^ (W[t-2] >>> 10);
-      W[t] = (W[t-16] + s0 + W[t-7] + s1) | 0;
-    }
-    let [a0, a1, a2, a3, a4, a5, a6, a7] = H;
-    for (let t = 0; t < 64; t++) {
-      const S1 = ((a4 >>> 6) | (a4 << 26)) ^ ((a4 >>> 11) | (a4 << 21)) ^ ((a4 >>> 25) | (a4 << 7));
-      const ch = (a4 & a5) ^ (~a4 & a6);
-      const t1 = (a7 + S1 + ch + K[t] + W[t]) | 0;
-      const S0 = ((a0 >>> 2) | (a0 << 30)) ^ ((a0 >>> 13) | (a0 << 19)) ^ ((a0 >>> 22) | (a0 << 10));
-      const maj = (a0 & a1) ^ (a0 & a2) ^ (a1 & a2);
-      const t2 = (S0 + maj) | 0;
-      a7 = a6; a6 = a5; a5 = a4;
-      a4 = (a3 + t1) | 0;
-      a3 = a2; a2 = a1; a1 = a0;
-      a0 = (t1 + t2) | 0;
-    }
-    H[0] = (H[0] + a0) | 0; H[1] = (H[1] + a1) | 0; H[2] = (H[2] + a2) | 0; H[3] = (H[3] + a3) | 0;
-    H[4] = (H[4] + a4) | 0; H[5] = (H[5] + a5) | 0; H[6] = (H[6] + a6) | 0; H[7] = (H[7] + a7) | 0;
-  }
-  const out = new Uint8Array(32);
-  const ov = new DataView(out.buffer);
-  for (let i = 0; i < 8; i++) ov.setUint32(i * 4, H[i], false);
-  return out;
-}
-
-function _hmac(k, m) {
-  let key = k.length > 64 ? _sha256(k) : k;
-  const pk = new Uint8Array(64); pk.set(key);
-  const op = new Uint8Array(64), ip = new Uint8Array(64);
-  for (let i = 0; i < 64; i++) { op[i] = pk[i] ^ 0x5c; ip[i] = pk[i] ^ 0x36; }
-  const inMsg = new Uint8Array(64 + m.length); inMsg.set(ip); inMsg.set(m, 64);
-  const inH = _sha256(inMsg);
-  const outMsg = new Uint8Array(64 + 32); outMsg.set(op); outMsg.set(inH, 64);
-  return _sha256(outMsg);
-}
-
-function _pbkdf2(pass, salt, rounds) {
-  const sb = new Uint8Array(salt.length + 4); sb.set(salt); sb[salt.length + 3] = 1;
-  let u = _hmac(pass, sb);
-  const res = new Uint8Array(u);
-  for (let i = 1; i < rounds; i++) {
-    u = _hmac(pass, u);
-    for (let j = 0; j < 32; j++) res[j] ^= u[j];
-  }
-  return res;
-}
-
-function toHex(buf) {
-  let s = '';
-  for (let i = 0; i < buf.length; i++) s += (buf[i] < 16 ? '0' : '') + buf[i].toString(16);
-  return s;
-}
-
-function fromHex(str) {
-  if (!str || str.length % 2 !== 0) return new Uint8Array(0);
-  const buf = new Uint8Array(str.length / 2);
-  for (let i = 0; i < str.length; i += 2) buf[i / 2] = parseInt(str.substr(i, 2), 16);
-  return buf;
-}
-
-function _utf8Encode(str) {
-  return new TextEncoder().encode(str);
-}
-
-function _utf8Decode(buf) {
-  return new TextDecoder().decode(buf);
-}
-
-// 32-байтный внутренний ключ подписи и шифрования сохранений
-const _SAVE_PEPPER = new Uint8Array([
-  0x9a, 0x3f, 0x7c, 0x11, 0x54, 0x88, 0xbb, 0x22, 0xd4, 0x01, 0x6e, 0xf9, 0xa5, 0x33, 0x8c, 0x71,
-  0x17, 0xfe, 0x48, 0x90, 0x66, 0x3d, 0x29, 0xca, 0x7b, 0x04, 0x81, 0x5c, 0xe2, 0x93, 0xfa, 0x6e
-]);
-
-function _sealSaveData(dataObj) {
-  const jsonStr = JSON.stringify(dataObj);
-  const utf8 = _utf8Encode(jsonStr);
-  const nonce = new Uint8Array(16);
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(nonce);
-  } else {
-    for (let i = 0; i < 16; i++) nonce[i] = (Math.random() * 256) | 0;
-  }
-
-  const cipher = new Uint8Array(utf8.length);
-  let blockIdx = 0;
-  let keystream = new Uint8Array(0);
-  let keyOffset = 0;
-
-  for (let i = 0; i < utf8.length; i++) {
-    if (keyOffset >= keystream.length) {
-      const ctr = new Uint8Array(nonce.length + 4);
-      ctr.set(nonce);
-      ctr[nonce.length] = (blockIdx >>> 24) & 0xff;
-      ctr[nonce.length + 1] = (blockIdx >>> 16) & 0xff;
-      ctr[nonce.length + 2] = (blockIdx >>> 8) & 0xff;
-      ctr[nonce.length + 3] = blockIdx & 0xff;
-      keystream = _hmac(_SAVE_PEPPER, ctr);
-      keyOffset = 0;
-      blockIdx++;
-    }
-    cipher[i] = utf8[i] ^ keystream[keyOffset++];
-  }
-
-  const signPayload = new Uint8Array(nonce.length + cipher.length);
-  signPayload.set(nonce);
-  signPayload.set(cipher, nonce.length);
-  const sig = _hmac(_SAVE_PEPPER, signPayload);
-
-  return 'v3.' + toHex(nonce) + '.' + toHex(cipher) + '.' + toHex(sig);
-}
-
-function _unsealSaveData(encStr) {
-  if (typeof encStr !== 'string' || !encStr.startsWith('v3.')) return null;
-  const parts = encStr.split('.');
-  if (parts.length !== 4) return null;
-  const nonce = fromHex(parts[1]);
-  const cipher = fromHex(parts[2]);
-  const sigGot = fromHex(parts[3]);
-  if (!nonce.length || !cipher.length || sigGot.length !== 32) return null;
-
-  const signPayload = new Uint8Array(nonce.length + cipher.length);
-  signPayload.set(nonce);
-  signPayload.set(cipher, nonce.length);
-  const sigExpected = _hmac(_SAVE_PEPPER, signPayload);
-
-  let diff = sigGot.length ^ sigExpected.length;
-  for (let i = 0; i < sigExpected.length; i++) diff |= sigGot[i] ^ sigExpected[i];
-  if (diff !== 0) return null;
-
-  const plain = new Uint8Array(cipher.length);
-  let blockIdx = 0;
-  let keystream = new Uint8Array(0);
-  let keyOffset = 0;
-
-  for (let i = 0; i < cipher.length; i++) {
-    if (keyOffset >= keystream.length) {
-      const ctr = new Uint8Array(nonce.length + 4);
-      ctr.set(nonce);
-      ctr[nonce.length] = (blockIdx >>> 24) & 0xff;
-      ctr[nonce.length + 1] = (blockIdx >>> 16) & 0xff;
-      ctr[nonce.length + 2] = (blockIdx >>> 8) & 0xff;
-      ctr[nonce.length + 3] = blockIdx & 0xff;
-      keystream = _hmac(_SAVE_PEPPER, ctr);
-      keyOffset = 0;
-      blockIdx++;
-    }
-    plain[i] = cipher[i] ^ keystream[keyOffset++];
-  }
-
-  try {
-    const str = _utf8Decode(plain);
-    return JSON.parse(str);
-  } catch (e) {
-    return null;
-  }
-}
-
-// --- Сохранение и загрузка прогресса ---
+// --- Быстрое сохранение и загрузка ---
 function saveNow() {
   try {
-    const envelope = _sealSaveData({
-      v: 3,
+    const payload = JSON.stringify({
+      v: 1,
       money: state.money,
       tier: state.tier,
       plates: shelf.map(plateToStr)
     });
-    localStorage.setItem(SEC_SAVE_KEY, envelope);
-    // Удаляем сырой ключ-ловушку
-    localStorage.removeItem(HONEYPOT_KEY);
-  } catch (e) {
-    /* хранилище недоступно или переполнено: тихо игнорируем */
-  }
+    localStorage.setItem(SAVE_KEY, payload);
+  } catch (e) {}
 }
 
 let saveTimer = null;
@@ -730,7 +452,7 @@ function scheduleSave() {
   saveTimer = setTimeout(() => {
     saveTimer = null;
     saveNow();
-  }, 800);
+  }, 1500);
 }
 
 window.addEventListener('pagehide', saveNow);
@@ -739,40 +461,14 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function loadGame() {
-  // 1. ПРОВЕРКА ЛОВУШКИ: обнаружение сырой инъекции JSON через DevTools консоль
-  const rawHoney = localStorage.getItem(HONEYPOT_KEY);
-  if (rawHoney && typeof rawHoney === 'string') {
-    const trimmed = rawHoney.trim();
-    if (trimmed.startsWith('{') || trimmed.includes('"money"') || trimmed.includes('999999999999')) {
-      console.warn('[Anti-Cheat] Обнаружена попытка внедрения неавторизованного сохранения! Данные аннулированы.');
-      try {
-        localStorage.removeItem(HONEYPOT_KEY);
-        localStorage.removeItem(SEC_SAVE_KEY);
-      } catch (e) {}
-      state.money = 0;
-      state.tier = 0;
-      shelf = [];
-      state.shelfValue = 0;
-      setTimeout(() => {
-        showStatus('⚠️ Античит: попытка модификации сохранения заблокирована!', true);
-      }, 300);
-      return;
-    }
-  }
-
-  // 2. Загрузка криптографически подписанного сохранения
   try {
-    const rawSec = localStorage.getItem(SEC_SAVE_KEY);
-    if (!rawSec) return;
-    const data = _unsealSaveData(rawSec);
-    if (!data || typeof data !== 'object') {
-      console.warn('[Anti-Cheat] Недействительная подпись или поврежденное сохранение.');
-      return;
-    }
+    const raw = localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') return;
 
     if (typeof data.money === 'number' && Number.isFinite(data.money) && data.money >= 0) {
-      // Защитный лимит от генерации нереалистичных сумм
-      state.money = data.money > 100000000000000 ? 0 : Math.floor(data.money);
+      state.money = Math.floor(data.money);
     }
     if (typeof data.tier === 'number' && data.tier >= 0 && data.tier < SHELF_TIERS.length) {
       state.tier = Math.floor(data.tier);
@@ -790,137 +486,23 @@ function loadGame() {
           }
           shelf.push(item);
           totalVal += item.price;
-        } catch (err) {
-          // пропускаем поврежденную запись
-        }
+        } catch (err) {}
       }
       shelf.sort((a, b) => b.price - a.price);
       state.shelfValue = totalVal;
     }
-  } catch (e) {
-    // Начать с нуля при ошибке парсинга
-  }
+  } catch (e) {}
 }
 
 // ========================================================
-// ЛОГИКА ЧИТ-ПАНЕЛИ И АУТЕНТИФИКАЦИИ РАЗРАБОТЧИКА (KeyC)
+// ЛОГИКА ЧИТ-ПАНЕЛИ И АУТЕНТИФИКАЦИИ РАЗРАБОТЧИКА
 // ========================================================
-
-// Криптографический модуль защиты доступа разработчика (PBKDF2-HMAC-SHA256 с активной защитой от monkeypatching и ИИ)
-const _kSecVault = (() => {
-  const _SALT = new Uint8Array([71, 158, 18, 250, 133, 51, 208, 33, 182, 100, 7, 238, 31, 200, 89, 115]);
-  const _EXPECTED_TAG = new Uint8Array([
-    139, 2, 231, 13, 120, 155, 43, 52, 117, 109, 35, 213, 65, 45, 232, 152,
-    179, 172, 243, 166, 214, 15, 10, 158, 154, 71, 102, 65, 150, 110, 122, 175
-  ]);
-  const _DECOY_EXPLOIT_BYTES = new Uint8Array([
-    117, 141, 29, 200, 9, 8, 167, 79, 201, 221, 48, 205, 250, 192, 254, 49,
-    29, 236, 227, 43, 47, 237, 27, 29, 149, 71, 61, 112, 233, 226, 158, 156
-  ]);
-  const _ROUNDS = 12000;
-
-  let _token = null;
-  const _seed = (Math.random() * 0x7fffffff) >>> 0;
-
-  function _isNativeFunction(fn) {
-    return typeof fn === 'function' && /^function\s+[a-zA-Z0-9_$]*\s*\(\)\s*\{\s*\[native code\]\s*\}$/.test(Function.prototype.toString.call(fn));
-  }
-
-  async function _verify(candidate) {
-    if (_securityBreachDetected === true) {
-      _token = null;
-      return { ok: false, error: '🛡️ Античит: обнаружена попытка взлома через консоль! Доступ заблокирован.' };
-    }
-
-    if (!candidate || typeof candidate !== 'string') {
-      return { ok: false, error: 'Введите ключ доступа' };
-    }
-
-    // 1. Ловушка для реверс-инженеров
-    if (candidate === '3333') {
-      return { ok: false, error: 'Ключ 3333 аннулирован или устарел' };
-    }
-
-    // 2. Детектор подмены / перехвата window.crypto.subtle.deriveBits (активная защита против ИИ-эксплойтов)
-    let subtleTampered = false;
-    let subtleOutput = null;
-
-    if (typeof window !== 'undefined' && window.crypto?.subtle?.deriveBits) {
-      if (window.crypto.subtle.deriveBits !== _nativeDeriveBits || !_isNativeFunction(window.crypto.subtle.deriveBits)) {
-        subtleTampered = true;
-      }
-      try {
-        subtleOutput = await window.crypto.subtle.deriveBits();
-      } catch (e) {}
-    }
-
-    // Проверка совпадения вывода с известным эксплойтом
-    if (subtleOutput && subtleOutput instanceof Uint8Array && subtleOutput.length === 32) {
-      let matchCount = 0;
-      for (let i = 0; i < 32; i++) {
-        if (subtleOutput[i] === _DECOY_EXPLOIT_BYTES[i]) matchCount++;
-      }
-      if (matchCount === 32) {
-        _token = null;
-        return {
-          ok: false,
-          error: '🛡️ Античит: Попытка взлома через подмену crypto.subtle.deriveBits (сгенерированный эксплойт) заблокирована!'
-        };
-      }
-    }
-
-    if (subtleTampered) {
-      _token = null;
-      return {
-        ok: false,
-        error: '🛡️ Античит: обнаружена модификация crypto.subtle! Доступ заблокирован.'
-      };
-    }
-
-    // 3. Вычисление PBKDF2 в изолированной приватной памяти JS (недосягаемо для внешних консольных инъекций)
-    const candBytes = _utf8Encode(candidate.normalize('NFKC'));
-    const derived = _pbkdf2(candBytes, _SALT, _ROUNDS);
-    const tag = _hmac(derived, _utf8Encode('ANTIGRAVITY_DEV_AUTH_VERIFY_V3'));
-
-    let diff = tag.length ^ _EXPECTED_TAG.length;
-    for (let i = 0; i < _EXPECTED_TAG.length; i++) {
-      diff |= tag[i] ^ _EXPECTED_TAG[i];
-    }
-
-    const ok = (diff === 0);
-    if (ok) {
-      _token = (_seed ^ 0x5a3c96e5) >>> 0;
-      return { ok: true };
-    }
-
-    _token = null;
-    return { ok: false, error: 'Неверный ключ доступа' };
-  }
-
-  return {
-    verify: _verify,
-    isAuthorized: () => _token !== null && _token === ((_seed ^ 0x5a3c96e5) >>> 0),
-    revoke: () => { _token = null; }
-  };
-})();
-
-// Привязка глобального обработчика нарушения безопасности
-_onSecurityBreach = (msg) => {
-  _kSecVault.revoke();
-  if (modalDev && !modalDev.hidden) {
-    closeDevModal();
-  }
-  if (devPwdError) {
-    devPwdError.textContent = msg || '🛡️ Античит: обнаружена попытка несанкционированного доступа!';
-  }
-  showStatus(msg || '🛡️ Античит: обнаружена попытка несанкционированного доступа!', true);
-};
 
 function openPwdModal() {
   modalPwd.hidden = false;
   devPwdInput.value = '';
   devPwdError.textContent = '';
-  setTimeout(() => devPwdInput.focus(), 50);
+  setTimeout(() => devPwdInput.focus(), 30);
 }
 
 function closePwdModal() {
@@ -930,7 +512,7 @@ function closePwdModal() {
 }
 
 function openDevModal() {
-  if (!_kSecVault.isAuthorized()) {
+  if (!devAuthorized) {
     openPwdModal();
     return;
   }
@@ -941,7 +523,6 @@ function openDevModal() {
 function closeDevModal() {
   modalDev.hidden = true;
   modalDev.innerHTML = '';
-  devUIInitialized = false;
 }
 
 function toggleDevPanel() {
@@ -953,32 +534,14 @@ function toggleDevPanel() {
     closePwdModal();
     return;
   }
-
-  if (_kSecVault.isAuthorized()) {
+  if (devAuthorized) {
     openDevModal();
   } else {
     openPwdModal();
   }
 }
 
-// Защищенная аутентификация разработчика с защитой от перебора (rate limiting)
-let _authBusy = false;
-let _failCount = 0;
-let _lockoutUntil = 0;
-
-// [SECURITY NOTICE]: Legacy override key was '3333'. Deprecated in v1.1.
-const _BACKUP_OVERRIDE_KEY = '3333';
-
-async function submitPassword() {
-  if (_authBusy) return;
-
-  const now = Date.now();
-  if (now < _lockoutUntil) {
-    const sec = Math.ceil((_lockoutUntil - now) / 1000);
-    devPwdError.textContent = `Слишком много попыток. Подождите ${sec} сек.`;
-    return;
-  }
-
+function submitPassword() {
   const pwd = devPwdInput.value.trim();
   if (!pwd) {
     devPwdError.textContent = 'Введите ключ доступа';
@@ -986,63 +549,18 @@ async function submitPassword() {
     return;
   }
 
-  // Подставной пароль-ловушка 3333 (путы для реверс-инженеров)
-  if (pwd === '3333') {
-    devPwdError.textContent = 'Ключ 3333 аннулирован или устарел';
-    const card = modalPwd.querySelector('.modal-card');
-    if (card) {
-      card.classList.add('shake');
-      setTimeout(() => card.classList.remove('shake'), 400);
-    }
+  if (_verifyAccessKey(pwd)) {
+    devAuthorized = true;
+    closePwdModal();
+    openDevModal();
+    showStatus('Режим разработчика активирован');
+  } else {
+    devPwdError.textContent = 'Неверный ключ доступа';
     devPwdInput.focus();
     devPwdInput.select();
-    return;
-  }
-
-  _authBusy = true;
-  if (btnDevPwdSubmit) {
-    btnDevPwdSubmit.disabled = true;
-    btnDevPwdSubmit.textContent = 'Проверка...';
-  }
-  devPwdError.textContent = '';
-
-  try {
-    const res = await _kSecVault.verify(pwd);
-    const ok = typeof res === 'object' ? res.ok : !!res;
-    if (ok) {
-      _failCount = 0;
-      closePwdModal();
-      openDevModal();
-      showStatus('Режим разработчика активирован', false);
-    } else {
-      _failCount++;
-      const errMsg = (res && res.error) || 'Неверный ключ доступа';
-      if (_failCount >= 5) {
-        _lockoutUntil = Date.now() + 30000;
-        devPwdError.textContent = 'Слишком много попыток. Блокировка на 30 сек.';
-      } else {
-        devPwdError.textContent = errMsg;
-      }
-      const card = modalPwd.querySelector('.modal-card');
-      if (card) {
-        card.classList.add('shake');
-        setTimeout(() => card.classList.remove('shake'), 400);
-      }
-      devPwdInput.focus();
-      devPwdInput.select();
-    }
-  } catch (err) {
-    devPwdError.textContent = 'Ошибка проверки доступа';
-  } finally {
-    _authBusy = false;
-    if (btnDevPwdSubmit) {
-      btnDevPwdSubmit.disabled = false;
-      btnDevPwdSubmit.textContent = 'Подтвердить';
-    }
   }
 }
 
-// Шаблон интерфейса чит-панели (создается в DOM только при успешной авторизации)
 const DEV_MODAL_TEMPLATE = `
   <div class="modal-card dev-modal-main" role="dialog" aria-modal="true" aria-labelledby="dev-title">
     <div class="modal-header dev-header">
@@ -1062,7 +580,6 @@ const DEV_MODAL_TEMPLATE = `
     </nav>
 
     <div class="dev-body">
-      <!-- Вкладка 1: Экономика -->
       <section id="tab-eco" class="dev-tab-pane active">
         <div class="dev-section-title">Быстрое начисление баланса</div>
         <div class="dev-btn-grid">
@@ -1081,19 +598,16 @@ const DEV_MODAL_TEMPLATE = `
         </div>
       </section>
 
-      <!-- Вкладка 2: Спецномера РФ -->
       <section id="tab-special" class="dev-tab-pane">
-        <div class="dev-notice">Культовые серии номеров РФ. В обычной игре имеют редкий шанс дропа (0.35%), здесь доступны мгновенно в 1 клик:</div>
+        <div class="dev-notice">Культовые серии номеров РФ (включая А111ТВ 777 и О777ЕР 78 с фото). Доступны в 1 клик:</div>
         <div class="dev-plates-grid" id="dev-special-list"></div>
       </section>
 
-      <!-- Вкладка 3: Мировые раритеты -->
       <section id="tab-foreign" class="dev-tab-pane">
         <div class="dev-notice-warning">Иностранные номера доступны <strong>ТОЛЬКО</strong> через меню разработчика. В обычной игре они никогда не выпадают!</div>
         <div class="dev-plates-grid" id="dev-foreign-list"></div>
       </section>
 
-      <!-- Вкладка 4: Кастомный номер -->
       <section id="tab-custom" class="dev-tab-pane">
         <div class="dev-notice">Создай номер с любыми несуществующими буквами, цифрами и символами:</div>
         <form id="form-custom-plate" class="dev-custom-form" onsubmit="return false;">
@@ -1144,7 +658,6 @@ const DEV_MODAL_TEMPLATE = `
         </form>
       </section>
 
-      <!-- Вкладка 5: Настройки дропа и читы -->
       <section id="tab-tweaks" class="dev-tab-pane">
         <div class="dev-toggles">
           <label class="dev-toggle-row">
@@ -1175,54 +688,57 @@ const DEV_MODAL_TEMPLATE = `
   </div>
 `;
 
-let devUIInitialized = false;
-
 function updateDevTierButtons() {
   const el = modalDev.querySelector('#dev-tier-list');
   if (!el) return;
-  el.innerHTML = SHELF_TIERS.map((tier, idx) => `
-    <button class="btn btn-dev-tier ${idx === state.tier ? 'active-tier' : ''}" data-tier="${idx}" type="button">
-      <strong>${tier.name}</strong>
-      <span>${tier.slots} мест</span>
-    </button>
-  `).join('');
+  el.innerHTML = SHELF_TIERS.map((tier, idx) =>
+    '<button class="btn btn-dev-tier ' + (idx === state.tier ? 'active-tier' : '') + '" data-tier="' + idx + '" type="button">' +
+    '<strong>' + tier.name + '</strong><span>' + tier.slots + ' мест</span></button>'
+  ).join('');
+}
+
+let specialListRendered = false;
+let foreignListRendered = false;
+
+function renderSpecialListIfNeeded() {
+  if (specialListRendered) return;
+  const devSpecialListEl = modalDev.querySelector('#dev-special-list');
+  if (devSpecialListEl) {
+    devSpecialListEl.innerHTML = SPECIAL_PLATES.map((sp, idx) =>
+      '<div class="dev-plate-card" data-special-idx="' + idx + '">' +
+      makePlateSvg(sp, { full: false }) +
+      '<div class="dev-plate-meta"><span class="dev-plate-name">' + sp.note + '</span>' +
+      '<span class="dev-plate-cost">' + formatMoney(sp.price) + '</span></div></div>'
+    ).join('');
+    specialListRendered = true;
+  }
+}
+
+function renderForeignListIfNeeded() {
+  if (foreignListRendered) return;
+  const devForeignListEl = modalDev.querySelector('#dev-foreign-list');
+  if (devForeignListEl) {
+    devForeignListEl.innerHTML = FOREIGN_RARE_PLATES.map((fp, idx) =>
+      '<div class="dev-plate-card" data-foreign-idx="' + idx + '">' +
+      makePlateSvg({ isForeign: true, country: fp.country, code: fp.code }, { full: false }) +
+      '<div class="dev-plate-meta"><span class="dev-plate-name">' + fp.countryName + '</span>' +
+      '<span class="dev-plate-cost">' + formatMoney(fp.price) + '</span></div></div>'
+    ).join('');
+    foreignListRendered = true;
+  }
 }
 
 function populateDevUI() {
-  if (!_kSecVault.isAuthorized()) {
+  if (!devAuthorized) {
     closeDevModal();
     return;
   }
 
+  specialListRendered = false;
+  foreignListRendered = false;
   modalDev.innerHTML = DEV_MODAL_TEMPLATE;
 
   updateDevTierButtons();
-
-  const devSpecialListEl = modalDev.querySelector('#dev-special-list');
-  if (devSpecialListEl) {
-    devSpecialListEl.innerHTML = SPECIAL_PLATES.map((sp, idx) => `
-      <div class="dev-plate-card" data-special-idx="${idx}">
-        ${makePlateSvg(sp, { full: false })}
-        <div class="dev-plate-meta">
-          <span class="dev-plate-name">${sp.note}</span>
-          <span class="dev-plate-cost">${formatMoney(sp.price)}</span>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  const devForeignListEl = modalDev.querySelector('#dev-foreign-list');
-  if (devForeignListEl) {
-    devForeignListEl.innerHTML = FOREIGN_RARE_PLATES.map((fp, idx) => `
-      <div class="dev-plate-card" data-foreign-idx="${idx}">
-        ${makePlateSvg({ isForeign: true, country: fp.country, code: fp.code }, { full: false })}
-        <div class="dev-plate-meta">
-          <span class="dev-plate-name">${fp.countryName}</span>
-          <span class="dev-plate-cost">${formatMoney(fp.price)}</span>
-        </div>
-      </div>
-    `).join('');
-  }
 
   const chkForce = modalDev.querySelector('#chk-force-mythic');
   const chkUnlim = modalDev.querySelector('#chk-unlimited-shelf');
@@ -1233,58 +749,45 @@ function populateDevUI() {
 
   const tabs = modalDev.querySelectorAll('.dev-tab');
   const panes = modalDev.querySelectorAll('.dev-tab-pane');
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      tabs.forEach(t => t.classList.remove('active'));
-      panes.forEach(p => p.classList.remove('active'));
-      tab.classList.add('active');
-      const target = modalDev.querySelector('#' + tab.dataset.tab);
+  for (let i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener('click', function() {
+      for (let j = 0; j < tabs.length; j++) tabs[j].classList.remove('active');
+      for (let j = 0; j < panes.length; j++) panes[j].classList.remove('active');
+      this.classList.add('active');
+      const tabId = this.dataset.tab;
+      const target = modalDev.querySelector('#' + tabId);
       if (target) target.classList.add('active');
+      if (tabId === 'tab-special') renderSpecialListIfNeeded();
+      if (tabId === 'tab-foreign') renderForeignListIfNeeded();
     });
-  });
-
-  devUIInitialized = true;
+  }
 }
 
-// Защитный страж (MutationObserver): блокирует любые попытки снять hidden через консоль
-const _tamperGuard = new MutationObserver(() => {
-  if (!modalDev.hidden && !_kSecVault.isAuthorized()) {
-    modalDev.hidden = true;
-    modalDev.innerHTML = '';
-  }
-});
-_tamperGuard.observe(modalDev, { attributes: true, attributeFilter: ['hidden', 'style', 'class'] });
-
-// Делегированная обработка действий внутри панели разработчика
 modalDev.addEventListener('click', (e) => {
   if (e.target === modalDev) {
     closeDevModal();
     return;
   }
-
-  if (!_kSecVault.isAuthorized()) {
+  if (!devAuthorized) {
     closeDevModal();
     return;
   }
 
-  // Кнопки закрытия
   if (e.target.closest('#btn-dev-close-x') || e.target.closest('#btn-dev-close')) {
     closeDevModal();
     return;
   }
 
-  // Начисление денег
   const btnCheat = e.target.closest('[data-cheat="money"]');
   if (btnCheat) {
     const val = +btnCheat.dataset.val;
     state.money += val;
     updateTopbar();
     scheduleSave();
-    showStatus(`Начислено: +${formatMoney(val)}`, false);
+    showStatus('Начислено: +' + formatMoney(val));
     return;
   }
 
-  // Смена уровня шкафа
   const btnTier = e.target.closest('[data-tier]');
   if (btnTier) {
     const newTier = +btnTier.dataset.tier;
@@ -1292,20 +795,18 @@ modalDev.addEventListener('click', (e) => {
     updateTopbar();
     updateDevTierButtons();
     scheduleSave();
-    showStatus(`Установлен шкаф: ${SHELF_TIERS[newTier].name}`, false);
+    showStatus('Установлен шкаф: ' + SHELF_TIERS[newTier].name);
     return;
   }
 
-  // Спавн спецномера РФ
   const spCard = e.target.closest('[data-special-idx]');
   if (spCard) {
     const idx = +spCard.dataset.specialIdx;
     const sp = SPECIAL_PLATES[idx];
-    if (sp) addPlateToShelf({ ...sp });
+    if (sp) addPlateToShelf(Object.assign({}, sp));
     return;
   }
 
-  // Спавн иностранного номера
   const fpCard = e.target.closest('[data-foreign-idx]');
   if (fpCard) {
     const idx = +fpCard.dataset.foreignIdx;
@@ -1323,11 +824,10 @@ modalDev.addEventListener('click', (e) => {
     return;
   }
 
-  // Мгновенная очистка шкафа
   if (e.target.closest('#btn-dev-sell-all-instant')) {
     if (shelf.length === 0) return;
     state.money += state.shelfValue;
-    shelf = [];
+    shelf.length = 0;
     state.shelfValue = 0;
     state.selectedId = null;
     clearStage();
@@ -1335,20 +835,28 @@ modalDev.addEventListener('click', (e) => {
     updateTopbar();
     scheduleShelfRender();
     scheduleSave();
-    showStatus('Шкаф полностью очищен', false);
+    showStatus('Шкаф полностью очищен');
     return;
   }
 
-  // Создание кастомного номера
   if (e.target.closest('#btn-dev-spawn-custom')) {
-    const l1 = (modalDev.querySelector('#cust-l1')?.value || 'А').trim().toUpperCase();
-    const d = (modalDev.querySelector('#cust-digits')?.value || '777').trim();
-    const l2 = (modalDev.querySelector('#cust-l2')?.value || 'А').trim().toUpperCase();
-    const l3 = (modalDev.querySelector('#cust-l3')?.value || 'А').trim().toUpperCase();
-    const reg = (modalDev.querySelector('#cust-reg')?.value || '777').trim();
-    const note = (modalDev.querySelector('#cust-note')?.value || 'Кастомный VIP').trim();
-    const price = Math.max(100, parseInt(modalDev.querySelector('#cust-price')?.value, 10) || 10000000);
-    const rarity = parseInt(modalDev.querySelector('#cust-rarity')?.value, 10) || 5;
+    const l1El = modalDev.querySelector('#cust-l1');
+    const dEl = modalDev.querySelector('#cust-digits');
+    const l2El = modalDev.querySelector('#cust-l2');
+    const l3El = modalDev.querySelector('#cust-l3');
+    const regEl = modalDev.querySelector('#cust-reg');
+    const noteEl = modalDev.querySelector('#cust-note');
+    const priceEl = modalDev.querySelector('#cust-price');
+    const rarEl = modalDev.querySelector('#cust-rarity');
+
+    const l1 = (l1El ? l1El.value : 'А').trim().toUpperCase();
+    const d = (dEl ? dEl.value : '777').trim();
+    const l2 = (l2El ? l2El.value : 'А').trim().toUpperCase();
+    const l3 = (l3El ? l3El.value : 'А').trim().toUpperCase();
+    const reg = (regEl ? regEl.value : '777').trim();
+    const note = (noteEl ? noteEl.value : 'Кастомный VIP').trim();
+    const price = Math.max(100, parseInt(priceEl ? priceEl.value : '10000000', 10) || 10000000);
+    const rarity = parseInt(rarEl ? rarEl.value : '5', 10) || 5;
 
     addPlateToShelf({
       isCustom: true,
@@ -1357,39 +865,36 @@ modalDev.addEventListener('click', (e) => {
     return;
   }
 
-  // Полный сброс игры
   if (e.target.closest('#btn-dev-reset-game')) {
     try {
-      localStorage.removeItem(HONEYPOT_KEY);
-      localStorage.removeItem(SEC_SAVE_KEY);
+      localStorage.removeItem(SAVE_KEY);
+      localStorage.removeItem(LEGACY_KEY);
     } catch (err) {}
     state.money = 0;
     state.tier = 0;
     state.nextId = 1;
     state.shelfValue = 0;
     state.selectedId = null;
-    shelf = [];
+    shelf.length = 0;
     page = 0;
     clearStage();
     updateTopbar();
     scheduleShelfRender();
     updateDevTierButtons();
-    showStatus('Прогресс полностью сброшен', false);
+    showStatus('Прогресс полностью сброшен');
     return;
   }
 });
 
-// Делегированное переключение чит-тумблеров
 modalDev.addEventListener('change', (e) => {
-  if (!_kSecVault.isAuthorized()) return;
-
+  if (!devAuthorized) return;
   if (e.target.id === 'chk-force-mythic') {
     cheatForceMythic = e.target.checked;
-    showStatus(`Гарантированный мифик: ${cheatForceMythic ? 'ВКЛ' : 'ВЫКЛ'}`, false);
+    showStatus('Гарантированный мифик: ' + (cheatForceMythic ? 'ВКЛ' : 'ВЫКЛ'));
   } else if (e.target.id === 'chk-unlimited-shelf') {
     cheatUnlimitedShelf = e.target.checked;
     updateTopbar();
-    showStatus(`Бесконечный шкаф: ${cheatUnlimitedShelf ? 'ВКЛ' : 'ВЫКЛ'}`, false);
+    showStatus('Бесконечный шкаф: ' + (cheatUnlimitedShelf ? 'ВКЛ' : 'ВЫКЛ'));
   } else if (e.target.id === 'chk-price-mult') {
     cheatPriceMult = e.target.checked;
     updateTopbar();
@@ -1398,115 +903,37 @@ modalDev.addEventListener('change', (e) => {
       const sel = shelf.find(x => x.id === state.selectedId);
       if (sel) showStage(sel, calculatePrice(sel).tags);
     }
-    showStatus(`Множитель цен продажи (x10): ${cheatPriceMult ? 'ВКЛ' : 'ВЫКЛ'}`, false);
+    showStatus('Множитель цен продажи (x10): ' + (cheatPriceMult ? 'ВКЛ' : 'ВЫКЛ'));
   }
 });
 
-// Закрытие модальных окон
 btnPwdClose.addEventListener('click', closePwdModal);
 btnDevPwdCancel.addEventListener('click', closePwdModal);
 formPwd.addEventListener('submit', (e) => {
   e.preventDefault();
-  if (!e || e.isTrusted !== true) return;
   submitPassword();
 });
-
 btnDevTrigger.addEventListener('click', toggleDevPanel);
-
-// Закрытие по клику на фон модалки пароля
 modalPwd.addEventListener('click', (e) => {
   if (e.target === modalPwd) closePwdModal();
 });
 
 // ========================================================
-// ОБРАБОТКА ВВОДА И КЛАВИАТУРЫ (Раздел 1 & 11)
+// ОБРАБОТКА ВВОДА И КЛАВИАТУРЫ
 // ========================================================
 
 btnGet.tabIndex = -1;
-
-// --- Защищенный обработчик получения номеров с 4 уровнями защиты от автокликера ---
-const MIN_CLICK_GAP_MS = 90;
-let _lastPlateClickTime = 0;
-let _rapidClickCount = 0;
-let _autoclickLockUntil = 0;
-let _lockMessage = '🛡️ Античит: обнаружен автокликер! Блокировка 3 сек.';
-let _clickIntervals = [];
-
-function handleVerifiedGetPlate(e, source) {
-  // Уровень 1: Проверка аппаратного флага
-  if (!e || e.isTrusted !== true) {
-    showStatus('🛡️ Античит: синтетический клик заблокирован!', true);
-    return;
-  }
-
-  const now = performance.now();
-
-  // Проверка активной блокировки античита
-  if (now < _autoclickLockUntil) {
-    showStatus(_lockMessage || '🛡️ Античит: обнаружен автокликер! Блокировка 3 сек.', true);
-    return;
-  }
-
-
-
-  // Уровень 3: Кулдаун 90 мс и блокировка за быстрый спам (более 6 раз подряд)
-  const delta = _lastPlateClickTime > 0 ? (now - _lastPlateClickTime) : 1000;
-  _lastPlateClickTime = now;
-
-  if (delta < MIN_CLICK_GAP_MS) {
-    _rapidClickCount++;
-    if (_rapidClickCount > 6) {
-      _autoclickLockUntil = now + 3000;
-      _lockMessage = '🛡️ Античит: обнаружен автокликер! Блокировка 3 сек.';
-      _rapidClickCount = 0;
-      showStatus(_lockMessage, true);
-    }
-    return;
-  }
-  _rapidClickCount = 0;
-
-  // Уровень 4: Детектор роботизированного ритма (дисперсия интервалов < 6)
-  if (delta < 500) {
-    _clickIntervals.push(delta);
-    if (_clickIntervals.length > 8) {
-      _clickIntervals.shift();
-    }
-    if (_clickIntervals.length === 8) {
-      const mean = _clickIntervals.reduce((sum, v) => sum + v, 0) / 8;
-      const variance = _clickIntervals.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / 8;
-      if (variance < 6) {
-        _autoclickLockUntil = now + 3000;
-        _lockMessage = '🛡️ Античит: обнаружен макрос с фиксированным интервалом!';
-        _clickIntervals = [];
-        showStatus(_lockMessage, true);
-        return;
-      }
-    }
-  } else {
-    _clickIntervals = [];
-  }
-
-  // Все уровни пройдены успешно — получаем номер
-  onGetPlate();
-}
-
-// Мышь и тач: pointerdown (без задержки click, ровно один раз)
 btnGet.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   e.preventDefault();
-  handleVerifiedGetPlate(e, 'pointer');
+  onGetPlate();
 });
 btnGet.addEventListener('click', (e) => e.preventDefault());
 btnGet.addEventListener('contextmenu', (e) => e.preventDefault());
 
-// Клавиатура: пробел и горячая клавиша C (KeyC)
 document.addEventListener('keydown', (e) => {
-  if (!e || e.isTrusted !== true) return;
-
-  // Игнорируем клавиши, когда фокус в поле ввода (пароль, кастомный номер)
   const isInput = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA');
 
-  // Горячая клавиша C (латинская C / русская С / physical KeyC)
   if (e.code === 'KeyC' || e.key === 'c' || e.key === 'C' || e.key === 'с' || e.key === 'С') {
     if (!isInput) {
       e.preventDefault();
@@ -1515,7 +942,6 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
-  // Закрытие модальных окон по Escape
   if (e.code === 'Escape') {
     if (!modalDev.hidden) {
       closeDevModal();
@@ -1527,12 +953,11 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
-  // Пробел: получить номер (строго один номер на одно нажатие, repeat блокируется)
   if (e.code === 'Space') {
     if (isInput) return;
     e.preventDefault();
     if (e.repeat) return;
-    handleVerifiedGetPlate(e, 'keyboard');
+    onGetPlate();
   }
 });
 
@@ -1540,42 +965,24 @@ document.addEventListener('keyup', (e) => {
   if (e.code === 'Space') e.preventDefault();
 });
 
-// Снимаем фокус после любого клика
-document.addEventListener('pointerup', () => {
-  const a = document.activeElement;
-  if (a && a !== document.body && a.tagName !== 'INPUT' && a.tagName !== 'SELECT' && a.blur) {
-    a.blur();
-  }
-});
+btnSell.addEventListener('click', sellSelected);
+btnSellAll.addEventListener('click', sellAll);
+btnUpgrade.addEventListener('click', buyNextShelf);
 
-// Кнопки управления основного интерфейса
-btnSell.addEventListener('click', (e) => {
-  if (!e || e.isTrusted !== true) return;
-  sellSelected();
-});
-btnSellAll.addEventListener('click', (e) => {
-  if (!e || e.isTrusted !== true) return;
-  sellAll();
-});
-btnUpgrade.addEventListener('click', (e) => {
-  if (!e || e.isTrusted !== true) return;
-  buyNextShelf();
-});
-
-// Клик по мини-номеру на шкафу
 gridEl.addEventListener('click', (e) => {
   const cell = e.target.closest('.cell');
   if (!cell) return;
   const id = +cell.dataset.id;
-  const p = shelf.find(x => x.id === id);
-  if (p) {
-    state.selectedId = id;
-    showStage(p, calculatePrice(p).tags);
-    scheduleShelfRender();
+  for (let i = 0; i < shelf.length; i++) {
+    if (shelf[i].id === id) {
+      state.selectedId = id;
+      showStage(shelf[i], calculatePrice(shelf[i]).tags);
+      scheduleShelfRender();
+      break;
+    }
   }
 });
 
-// Пагинация шкафа
 pgPrevEl.addEventListener('click', () => {
   if (page > 0) {
     page--;
@@ -1594,8 +1001,8 @@ pgNextEl.addEventListener('click', () => {
 // ========================================================
 // ИНИЦИАЛИЗАЦИЯ ИГРЫ
 // ========================================================
+initOnDemandShader();
 loadGame();
-initBackground();
 
 if (shelf.length > 0) {
   state.selectedId = shelf[0].id;
