@@ -764,8 +764,59 @@ function enforceBan() {
     '<div style="font-size:64px;line-height:1">⛔</div>' +
     '<div style="font-size:28px;font-weight:700">Вы заблокированы</div>' +
     '<div style="font-size:16px;color:#c9c9d1;max-width:420px">' +
-    'Использован запрещённый ключ доступа. Весь прогресс удалён, доступ к игре закрыт навсегда.</div>';
+    'Использован запрещённый ключ доступа. Весь прогресс удалён, доступ к игре закрыт.</div>' +
+    '<input id="unban-input" type="password" maxlength="20" autocomplete="off" placeholder="Ключ разбана..." ' +
+    'style="margin-top:8px;padding:10px 14px;font-size:16px;border-radius:8px;border:1px solid #444;' +
+    'background:#15151c;color:#fff;text-align:center;outline:none;width:240px;max-width:80vw">' +
+    '<div id="unban-error" style="min-height:20px;font-size:14px;color:#ff8a8a"></div>' +
+    '<button id="unban-btn" type="button" style="padding:10px 22px;font-size:16px;border-radius:8px;' +
+    'border:0;background:#2d6cdf;color:#fff;cursor:pointer">Разбан</button>';
   document.body.appendChild(ov);
+
+  const inp = ov.querySelector('#unban-input');
+  const btn = ov.querySelector('#unban-btn');
+  const err = ov.querySelector('#unban-error');
+  let fails = 0;
+  let lockUntil = 0;
+
+  const tryUnban = (e) => {
+    if (e && e.isTrusted !== true) return;
+    const now = Date.now();
+    if (now < lockUntil) {
+      err.textContent = 'Подождите ' + Math.ceil((lockUntil - now) / 1000) + ' сек.';
+      return;
+    }
+    if (_kSecVault.unban(inp.value.trim())) {
+      liftBan();
+      return;
+    }
+    fails++;
+    inp.value = '';
+    if (fails >= 5) {
+      fails = 0;
+      lockUntil = Date.now() + 30000;
+      err.textContent = 'Слишком много попыток. Блокировка на 30 сек.';
+    } else {
+      err.textContent = 'Неверный ключ разбана';
+    }
+    inp.focus();
+  };
+  btn.addEventListener('click', tryUnban);
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') tryUnban(e);
+  });
+  setTimeout(() => inp.focus(), 50);
+}
+
+function liftBan() {
+  try { localStorage.removeItem(BAN_KEY); } catch (e) {}
+  try {
+    document.cookie = BAN_COOKIE + '=; max-age=0; path=/; SameSite=Lax';
+  } catch (e) {}
+  _banned = false;
+  const ov = document.getElementById('ban-overlay');
+  if (ov) ov.remove();
+  location.reload(); // чистый старт (прогресс остаётся удалённым)
 }
 
 function triggerBan() {
@@ -777,6 +828,8 @@ function triggerBan() {
 ['keydown', 'keyup', 'pointerdown', 'pointerup', 'click', 'contextmenu', 'submit'].forEach(type => {
   document.addEventListener(type, (e) => {
     if (_banned) {
+      const t = e.target;
+      if (t && typeof t.closest === 'function' && t.closest('#ban-overlay')) return; // поле разбана
       e.preventDefault();
       e.stopImmediatePropagation();
     }
@@ -903,6 +956,13 @@ const _kSecVault = (() => {
     188, 135, 84, 237, 117, 19, 244, 174, 159, 219, 248, 86, 56, 33, 13, 204
   ]);
 
+  // Ключ разбана (PBKDF2-HMAC-SHA256, отдельная соль и контекст; пароль в коде не хранится)
+  const _SALT3 = new Uint8Array([57, 244, 130, 11, 98, 175, 223, 46, 189, 72, 15, 160, 234, 101, 68, 139]);
+  const _EXPECTED_TAG3 = new Uint8Array([
+    179, 219, 80, 84, 24, 153, 1, 107, 169, 81, 186, 245, 46, 204, 199, 56,
+    117, 205, 98, 59, 180, 98, 52, 180, 0, 10, 11, 41, 199, 215, 90, 172
+  ]);
+
   let _token = null;
   let _stage1Passed = false;
   const _seed = (Math.random() * 0x7fffffff) >>> 0;
@@ -1019,9 +1079,22 @@ const _kSecVault = (() => {
     return { ok: false, error: 'Неверный второй ключ. Начните сначала.' };
   }
 
+  function _unban(candidate) {
+    if (!candidate || typeof candidate !== 'string') return false;
+    const candBytes = _utf8Encode(candidate.normalize('NFKC'));
+    const derived = _pbkdf2(candBytes, _SALT3, _ROUNDS);
+    const tag = _hmac(derived, _utf8Encode('ANTIGRAVITY_DEV_AUTH_VERIFY_V3_UNBAN'));
+    let diff = tag.length ^ _EXPECTED_TAG3.length;
+    for (let i = 0; i < _EXPECTED_TAG3.length; i++) {
+      diff |= tag[i] ^ _EXPECTED_TAG3[i];
+    }
+    return diff === 0;
+  }
+
   return {
     verify: _verify,
     verify2: _verify2,
+    unban: _unban,
     isAuthorized: () => _token !== null && _token === ((_seed ^ 0x5a3c96e5) >>> 0),
     resetStage: () => { _stage1Passed = false; },
     revoke: () => { _token = null; _stage1Passed = false; }
